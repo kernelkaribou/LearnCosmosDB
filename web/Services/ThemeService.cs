@@ -23,7 +23,7 @@ public class ThemeService
         try
         {
             var stored = await _js.InvokeAsync<string?>("localStorage.getItem", "theme");
-            _isDark = stored == "dark";
+            _isDark = stored != "light";
             await ApplyTheme();
         }
         catch

@@ -53,6 +53,13 @@ html, body {
     color: var(--text-primary);
     background: var(--bg-page);
     line-height: 1.5;
+    height: 100%;
+}
+
+#app {
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
 }
 
 /* Prevent focus outline on page load / navigation */
@@ -714,6 +721,7 @@ pre.doc-json {
     grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
     gap: 1.25rem;
     margin-top: 1rem;
+    margin-bottom: 2.5rem;
 }
 
 .module-card {
@@ -903,4 +911,52 @@ pre.doc-json {
     padding: 0.5rem 0.75rem;
     margin-bottom: 1rem;
     font-size: 0.875rem;
+}
+
+/* ── Site Footer ──────────────────────────────── */
+.site-footer {
+    border-top: 1px solid var(--border-color);
+    margin-top: auto;
+    padding: 1.25rem 2rem;
+    color: var(--text-muted);
+    font-size: 0.8rem;
+}
+
+.footer-inner {
+    max-width: 1400px;
+    margin: 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.footer-brand {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    color: var(--text-muted);
+    text-decoration: none;
+}
+
+.footer-brand:hover { color: var(--text-secondary); text-decoration: none; }
+
+.footer-icon {
+    width: 32px;
+    height: 32px;
+    border-radius: 3px;
+}
+
+.footer-github {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    color: var(--text-muted);
+    text-decoration: none;
+}
+
+.footer-github:hover { color: var(--text-secondary); text-decoration: none; }
+
+.github-icon {
+    width: 32px;
+    height: 32px;
 }
