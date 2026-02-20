@@ -50,17 +50,3 @@ jobs:
           file: api/Dockerfile
           push: true
           tags: ${{ env.IMAGE_TAGS }}
-
-      - uses: azure/login@v2
-        with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
-
-      - name: Deploy to Azure Container Apps
-        uses: azure/container-apps-deploy-action@v1
-        with:
-          registryUrl: ghcr.io
-          registryUsername: ${{ github.actor }}
-          registryPassword: ${{ secrets.GITHUB_TOKEN }}
-          containerAppName: ${{ vars.API_CONTAINER_APP_NAME }}
-          resourceGroup: ${{ vars.AZURE_RESOURCE_GROUP }}
-          imageToDeploy: ${{ env.IMAGE_NAME }}:${{ env.DEPLOY_TAG }}
