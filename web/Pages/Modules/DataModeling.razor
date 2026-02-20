@@ -170,9 +170,25 @@
                         <div class="detail-section">
                             <h3>Directors</h3>
                             <div class="detail-people">
-                                @foreach (var (name, originalName) in detailDirectors)
+                                @foreach (var (name, originalName, imageUrl) in detailDirectors)
                                 {
-                                    <span class="person-link" @onclick="() => SearchPersonFromDetail(originalName)">@originalName</span>
+                                    <span class="person-card-link" @onclick="() => SearchPersonFromDetail(originalName)">
+                                        @if (!string.IsNullOrEmpty(imageUrl))
+                                        {
+                                            <img class="person-avatar" src="@imageUrl" alt="@originalName"
+                                                 onerror="this.style.display='none';this.nextElementSibling.style.display='flex';" />
+                                            <span class="person-avatar-placeholder" style="display:none;">
+                                                <svg viewBox="0 0 64 64" class="silhouette-icon"><circle cx="32" cy="24" r="12"/><ellipse cx="32" cy="56" rx="20" ry="14"/></svg>
+                                            </span>
+                                        }
+                                        else
+                                        {
+                                            <span class="person-avatar-placeholder">
+                                                <svg viewBox="0 0 64 64" class="silhouette-icon"><circle cx="32" cy="24" r="12"/><ellipse cx="32" cy="56" rx="20" ry="14"/></svg>
+                                            </span>
+                                        }
+                                        <span class="person-name">@originalName</span>
+                                    </span>
                                 }
                             </div>
                         </div>
@@ -183,9 +199,25 @@
                         <div class="detail-section">
                             <h3>Cast</h3>
                             <div class="detail-people">
-                                @foreach (var (name, originalName) in detailActors)
+                                @foreach (var (name, originalName, imageUrl) in detailActors)
                                 {
-                                    <span class="person-link" @onclick="() => SearchPersonFromDetail(originalName)">@originalName</span>
+                                    <span class="person-card-link" @onclick="() => SearchPersonFromDetail(originalName)">
+                                        @if (!string.IsNullOrEmpty(imageUrl))
+                                        {
+                                            <img class="person-avatar" src="@imageUrl" alt="@originalName"
+                                                 onerror="this.style.display='none';this.nextElementSibling.style.display='flex';" />
+                                            <span class="person-avatar-placeholder" style="display:none;">
+                                                <svg viewBox="0 0 64 64" class="silhouette-icon"><circle cx="32" cy="24" r="12"/><ellipse cx="32" cy="56" rx="20" ry="14"/></svg>
+                                            </span>
+                                        }
+                                        else
+                                        {
+                                            <span class="person-avatar-placeholder">
+                                                <svg viewBox="0 0 64 64" class="silhouette-icon"><circle cx="32" cy="24" r="12"/><ellipse cx="32" cy="56" rx="20" ry="14"/></svg>
+                                            </span>
+                                        }
+                                        <span class="person-name">@originalName</span>
+                                    </span>
                                 }
                             </div>
                         </div>
@@ -825,17 +857,19 @@
         return result;
     }
 
-    private static List<(string Name, string OriginalName)> GetPeople(JsonElement el, string prop)
+    private static List<(string Name, string OriginalName, string? ImageUrl)> GetPeople(JsonElement el, string prop)
     {
         if (el.ValueKind != JsonValueKind.Object || !el.TryGetProperty(prop, out var arr) || arr.ValueKind != JsonValueKind.Array)
             return [];
-        var result = new List<(string, string)>();
+        var result = new List<(string, string, string?)>();
         foreach (var item in arr.EnumerateArray())
         {
             var name = item.TryGetProperty("name", out var n) ? n.GetString() ?? "" : "";
             var originalName = item.TryGetProperty("originalName", out var on) && on.ValueKind == JsonValueKind.String
                 ? on.GetString() ?? name : name;
-            result.Add((name, originalName));
+            var imageUrl = item.TryGetProperty("imageUrl", out var img) && img.ValueKind == JsonValueKind.String
+                ? img.GetString() : null;
+            result.Add((name, originalName, imageUrl));
         }
         return result;
     }

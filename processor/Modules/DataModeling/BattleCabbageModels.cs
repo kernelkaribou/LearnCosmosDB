@@ -54,6 +54,9 @@ public class BattleCabbageActor
 
     [JsonPropertyName("actor")]
     public string Actor { get; set; } = string.Empty;
+
+    [JsonPropertyName("image_url")]
+    public string? ImageUrl { get; set; }
 }
 
 public class BattleCabbageDirector
@@ -63,6 +66,9 @@ public class BattleCabbageDirector
 
     [JsonPropertyName("director")]
     public string Director { get; set; } = string.Empty;
+
+    [JsonPropertyName("image_url")]
+    public string? ImageUrl { get; set; }
 }
 
 public class BattleCabbageReview

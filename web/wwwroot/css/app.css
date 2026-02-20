@@ -607,6 +607,60 @@ pre.doc-json {
     border-color: var(--cosmos-blue);
 }
 
+.person-avatar {
+    width: 64px;
+    height: 64px;
+    border-radius: 50%;
+    object-fit: cover;
+    display: block;
+}
+
+.person-avatar-placeholder {
+    width: 64px;
+    height: 64px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg-panel-alt);
+    color: var(--text-muted);
+    font-size: 1.5rem;
+    overflow: hidden;
+}
+
+.silhouette-icon {
+    width: 40px;
+    height: 40px;
+    fill: var(--text-muted);
+}
+
+.person-card-link {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.35rem;
+    cursor: pointer;
+    padding: 0.5rem;
+    border-radius: 6px;
+    transition: background 0.2s;
+    text-decoration: none;
+    color: var(--cosmos-blue);
+    width: 90px;
+}
+
+.person-card-link:hover {
+    background: rgba(0, 120, 212, 0.1);
+}
+
+.person-name {
+    font-size: 0.75rem;
+    text-align: center;
+    width: 100%;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+    line-height: 1.3;
+}
+
 .review-item {
     display: flex;
     gap: 0.5rem;

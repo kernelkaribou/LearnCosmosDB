@@ -11,6 +11,7 @@ public class Actor
     public string Name { get; set; } = string.Empty;
     public string? OriginalName { get; set; }
     public string Id { get; set; } = string.Empty;
+    public string? ImageUrl { get; set; }
 }
 
 public class Director
@@ -18,6 +19,7 @@ public class Director
     public string Name { get; set; } = string.Empty;
     public string? OriginalName { get; set; }
     public string Id { get; set; } = string.Empty;
+    public string? ImageUrl { get; set; }
 }
 
 public class Role

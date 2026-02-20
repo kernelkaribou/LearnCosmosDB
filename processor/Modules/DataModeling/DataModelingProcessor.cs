@@ -232,13 +232,15 @@ public class DataModelingProcessor(BattleCabbageClient apiClient, CosmosClient c
             {
                 Id = a.ActorId.ToString(),
                 Name = lowercasePersonNames ? a.Actor.ToLowerInvariant() : a.Actor,
-                OriginalName = lowercasePersonNames ? a.Actor : null
+                OriginalName = lowercasePersonNames ? a.Actor : null,
+                ImageUrl = FullPosterUrl(a.ImageUrl)
             }).ToList(),
             Directors = src.Directors.Select(d => new Director
             {
                 Id = d.DirectorId.ToString(),
                 Name = lowercasePersonNames ? d.Director.ToLowerInvariant() : d.Director,
-                OriginalName = lowercasePersonNames ? d.Director : null
+                OriginalName = lowercasePersonNames ? d.Director : null,
+                ImageUrl = FullPosterUrl(d.ImageUrl)
             }).ToList(),
             Reviews = src.Reviews.Select(r => new Review
             {
@@ -272,8 +274,8 @@ public class DataModelingProcessor(BattleCabbageClient apiClient, CosmosClient c
             Genres = string.IsNullOrEmpty(movie.Genre)
                 ? []
                 : [new Genre { Id = movie.Genre.ToLowerInvariant(), Name = movie.Genre }],
-            Actors = movie.Actors.Select(a => new Actor { Id = a.ActorId.ToString(), Name = a.Actor }).ToList(),
-            Directors = movie.Directors.Select(d => new Director { Id = d.DirectorId.ToString(), Name = d.Director }).ToList(),
+            Actors = movie.Actors.Select(a => new Actor { Id = a.ActorId.ToString(), Name = a.Actor, ImageUrl = FullPosterUrl(a.ImageUrl) }).ToList(),
+            Directors = movie.Directors.Select(d => new Director { Id = d.DirectorId.ToString(), Name = d.Director, ImageUrl = FullPosterUrl(d.ImageUrl) }).ToList(),
             Reviews = movie.Reviews.Select(r => new Review
             {
                 Id = r.CriticReviewId?.ToString() ?? "",
