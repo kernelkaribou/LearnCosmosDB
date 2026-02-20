@@ -87,17 +87,16 @@ LearnCosmosDB/
 - An Azure subscription
 - A GitHub repository with this code pushed
 
-### 1. Create Azure Resources
+### 1. Create Azure Resources (in this order)
 
-Create the following resources in Azure (all in the same resource group and region):
+Create the following resources in Azure (all in the same resource group and region). **The order matters** — the API must be created before the Static Web App so the API URL is available:
 
-| Resource | Type | Notes |
-|----------|------|-------|
-| Cosmos DB Account | NoSQL API | Create a database named `DataModeling` with containers: `Single`, `Embedded`, `Reference`, `Hybrid` (partition key: `/title`) |
-| Container Apps Environment | — | Shared environment for API and processor |
-| Container App (API) | Container App | Image: `ghcr.io/<owner>/<repo>/api:latest`, ingress enabled on port 8080 |
-| Container Apps Job (Processor) | Container Apps Job | Image: `ghcr.io/<owner>/<repo>/processor:latest`, trigger: manual |
-| Static Web App | Free/Standard | For the Blazor WASM frontend |
+1. **Cosmos DB Account** (NoSQL API) — Create a database named `DataModeling` with containers: `Single`, `Embedded`, `Reference`, `Hybrid` (partition key: `/title`)
+2. **Container Apps Environment** — Shared environment for API and processor
+3. **Container App (API)** — Image: `ghcr.io/<owner>/learncosmosdb/api:latest`, ingress enabled on port 8080. Note the API URL after creation.
+4. **Container Apps Job (Processor)** — Image: `ghcr.io/<owner>/learncosmosdb/processor:latest`, trigger: manual
+5. **Set GitHub variables** — Add `API_BASE_URL` (the API URL from step 3) to your GitHub repo variables **before** creating the Static Web App
+6. **Static Web App** — When connecting to GitHub, Azure auto-generates a workflow file. You must add the API URL injection step to it (see below)
 
 ### 2. Configure Container App Environment Variables
 
@@ -136,8 +135,24 @@ Create the following resources in Azure (all in the same resource group and regi
 
 > **Note:** The API and processor workflows authenticate to GHCR using the built-in `GITHUB_TOKEN` — no additional container registry secrets are needed. The API deploy workflow uses `azure/container-apps-deploy-action` which requires an Azure login — configure `AZURE_CREDENTIALS` or use federated identity (OIDC).
 
-### 4. Deploy
+### 4. Static Web App Workflow
 
-1. **Seed the database:** Run the processor Container Apps Job from the Azure Portal to populate Cosmos DB
-2. **Push to main:** GitHub Actions will build and deploy the API and web app automatically
+When you create the Static Web App and connect it to GitHub, Azure auto-generates a workflow file (e.g., `azure-static-web-apps-*.yml`). This workflow **does not** inject the production API URL by default. You must add the following step after `actions/checkout` and before `Azure/static-web-apps-deploy`:
+
+```yaml
+      - name: Set production API URL
+        run: |
+          cat > web/wwwroot/appsettings.json << EOF
+          {
+            "ApiBaseUrl": "${{ vars.API_BASE_URL }}"
+          }
+          EOF
+```
+
+This overwrites the localhost default with your Container App API URL at build time. **This step is required every time a new SWA workflow is auto-generated.**
+
+### 5. Deploy
+
+1. **Push to main:** GitHub Actions will build and deploy the API and web app automatically
+2. **Seed the database:** Run the processor Container Apps Job from the Azure Portal to populate Cosmos DB
 3. **Verify:** Visit your Static Web App URL
