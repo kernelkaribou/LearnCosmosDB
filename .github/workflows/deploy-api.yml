@@ -7,6 +7,8 @@ on:
       - 'api/**'
       - 'shared/**'
       - '.github/workflows/deploy-api.yml'
+  release:
+    types: [published]
   workflow_dispatch:
 
 jobs:
@@ -20,8 +22,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set image name
-        run: echo "IMAGE_NAME=ghcr.io/${GITHUB_REPOSITORY,,}/api" >> "$GITHUB_ENV"
+      - name: Set image name and tags
+        run: |
+          echo "IMAGE_NAME=ghcr.io/${GITHUB_REPOSITORY,,}/api" >> "$GITHUB_ENV"
+          SHORT_SHA="${GITHUB_SHA::7}"
+          TAGS="${IMAGE_NAME}:${SHORT_SHA},${IMAGE_NAME}:latest"
+          if [[ "${{ github.event_name }}" == "release" ]]; then
+            VERSION="${{ github.event.release.tag_name }}"
+            VERSION="${VERSION#v}"
+            TAGS="${TAGS},${IMAGE_NAME}:${VERSION}"
+          fi
+          echo "IMAGE_TAGS=${TAGS}" >> "$GITHUB_ENV"
+          echo "DEPLOY_TAG=${SHORT_SHA}" >> "$GITHUB_ENV"
 
       - name: Log in to GHCR
         uses: docker/login-action@v3
@@ -36,9 +48,7 @@ jobs:
           context: .
           file: api/Dockerfile
           push: true
-          tags: |
-            ${{ env.IMAGE_NAME }}:${{ github.sha }}
-            ${{ env.IMAGE_NAME }}:latest
+          tags: ${{ env.IMAGE_TAGS }}
 
       - uses: azure/login@v2
         with:
@@ -52,4 +62,4 @@ jobs:
           registryPassword: ${{ secrets.GITHUB_TOKEN }}
           containerAppName: ${{ vars.API_CONTAINER_APP_NAME }}
           resourceGroup: ${{ vars.AZURE_RESOURCE_GROUP }}
-          imageToDeploy: ${{ env.IMAGE_NAME }}:${{ github.sha }}
+          imageToDeploy: ${{ env.IMAGE_NAME }}:${{ env.DEPLOY_TAG }}
