@@ -23,7 +23,8 @@ jobs:
 
       - name: Set image name and tags
         run: |
-          echo "IMAGE_NAME=ghcr.io/${GITHUB_REPOSITORY,,}/processor" >> "$GITHUB_ENV"
+          IMAGE_NAME="ghcr.io/${GITHUB_REPOSITORY,,}/processor"
+          echo "IMAGE_NAME=${IMAGE_NAME}" >> "$GITHUB_ENV"
           SHORT_SHA="${GITHUB_SHA::7}"
           TAGS="${IMAGE_NAME}:${SHORT_SHA},${IMAGE_NAME}:latest"
           if [[ "${{ github.event_name }}" == "release" ]]; then
