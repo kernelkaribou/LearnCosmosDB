@@ -1,0 +1,30 @@
+@inject BenchmarkService Benchmark
+@implements IDisposable
+
+<div class="benchmark">
+    <div class="benchmark-stat">
+        <span class="stat-value">@Benchmark.SelectQueries</span>
+        <span class="stat-label">Queries</span>
+    </div>
+    <div class="benchmark-stat">
+        <span class="stat-value">@Benchmark.PointReads</span>
+        <span class="stat-label">Reads</span>
+    </div>
+    <div class="benchmark-stat">
+        <span class="stat-value">@Benchmark.TotalRUs.ToString("F1")</span>
+        <span class="stat-label">RUs</span>
+    </div>
+    <button class="benchmark-clear" title="Clear stats" @onclick="Benchmark.Clear">↺</button>
+</div>
+
+@code {
+    protected override void OnInitialized()
+    {
+        Benchmark.OnChange += StateHasChanged;
+    }
+
+    public void Dispose()
+    {
+        Benchmark.OnChange -= StateHasChanged;
+    }
+}

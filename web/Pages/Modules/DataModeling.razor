@@ -1,0 +1,891 @@
+@page "/modules/datamodeling"
+@using System.Text.Json
+@inject DataModelingApiClient Api
+@inject BenchmarkService Benchmark
+@implements IDisposable
+
+<PageTitle>Data Modeling - Learn Cosmos DB</PageTitle>
+
+<div class="page-header">
+    <h1>Data Modeling</h1>
+    <span class="page-subtitle">Explore how different document models affect query cost and performance</span>
+</div>
+
+<div class="search-row">
+    <div class="demo-controls">
+        <select @bind="selectedModel">
+            <option value="Single">Single</option>
+            <option value="Embedded">Embedded</option>
+            <option value="Reference">Reference</option>
+            <option value="Hybrid">Hybrid</option>
+        </select>
+
+        @if (selectedModel == "Single")
+        {
+            <select @bind="searchType">
+                <option value="movie">Movie</option>
+                <option value="person">Actor / Director</option>
+            </select>
+        }
+
+        <input type="text" @bind="searchValue" @bind:event="oninput"
+               @onkeydown="HandleKeyDown" placeholder="Enter search term..." />
+        <button @onclick="ExecuteSearch" disabled="@isLoading">
+            @(isLoading ? "Searching..." : "Search")
+        </button>
+    </div>
+</div>
+
+@if (errorMessage is not null)
+{
+    <div class="error-message">@errorMessage</div>
+}
+
+@if (response is not null)
+{
+    <div class="results-panel">
+        <div class="panel panel-left">
+            <div class="diag-summary">
+                <h3>Query Diagnostics</h3>
+                <div class="diag-row">
+                    <span class="diag-label">RU Cost</span>
+                    <span class="diag-value ru-highlight">@response.RequestDiagnostics.RequestCharge RU</span>
+                </div>
+                <div class="diag-row">
+                    <span class="diag-label">Query Type</span>
+                    <span class="diag-value">@response.RequestDiagnostics.QueryType</span>
+                </div>
+                @if (response.RequestDiagnostics.QueryText is not null)
+                {
+                    <div class="diag-row">
+                        <span class="diag-label">Query</span>
+                        <span class="diag-value" style="font-family: monospace; font-size: 0.78rem;">@response.RequestDiagnostics.QueryText</span>
+                    </div>
+                }
+                @if (response.RequestDiagnostics.QueryType == "Point Read")
+                {
+                    <div class="diag-row">
+                        <span class="diag-label">Document ID</span>
+                        <span class="diag-value diag-truncate">@response.RequestDiagnostics.DocId</span>
+                    </div>
+                    <div class="diag-row">
+                        <span class="diag-label">Partition Key</span>
+                        <span class="diag-value diag-truncate">@response.RequestDiagnostics.FormattedSearchValue</span>
+                    </div>
+                }
+                else
+                {
+                    <div class="diag-row">
+                        <span class="diag-label">Search Value</span>
+                        <span class="diag-value">@response.RequestDiagnostics.SubmittedSearchValue</span>
+                    </div>
+                }
+                <div class="diag-row">
+                    <span class="diag-label">Data Model</span>
+                    <span class="diag-value">@response.RequestDiagnostics.DataModel</span>
+                </div>
+                <div class="diag-row">
+                    <span class="diag-label">Documents</span>
+                    <span class="diag-value">@response.MediaResults.Count</span>
+                </div>
+            </div>
+
+            @if (response.MediaResults.Count > 0)
+            {
+                <h3 style="margin-top: 1rem;">Raw JSON</h3>
+                <pre class="doc-json">@FormatJson(selectedMovie ?? response.MediaResults[0])</pre>
+            }
+        </div>
+
+        <div class="panel-right">
+            @if (selectedMovie is not null)
+            {
+                @* ── Movie Detail View ── *@
+                var m = selectedMovie.Value;
+                var detailTitle = GetProp(m, "originalTitle") ?? GetProp(m, "title") ?? "";
+                var detailPoster = GetProp(m, "posterUrl");
+                var detailYear = GetProp(m, "year") ?? "";
+                var detailRating = GetProp(m, "mpaaRating") ?? "";
+                var detailDesc = GetProp(m, "description") ?? GetProp(m, "tagline") ?? "";
+                var detailTagline = GetProp(m, "tagline") ?? "";
+                var detailGenres = GetArray(m, "genres");
+                var detailActors = GetPeople(m, "actors");
+                var detailDirectors = GetPeople(m, "directors");
+                var detailReviews = GetReviews(m);
+
+                <div class="panel movie-detail">
+                    <button class="detail-back" @onclick="ClearDetail">← Back to results</button>
+                    <div class="detail-header">
+                        @if (!string.IsNullOrEmpty(detailPoster))
+                        {
+                            <img class="detail-poster" src="@detailPoster" alt="@detailTitle" />
+                        }
+                        else
+                        {
+                            <div class="detail-poster-placeholder">🎬</div>
+                        }
+                        <div class="detail-info">
+                            <h2 class="detail-title">@detailTitle</h2>
+                            <div class="detail-meta">
+                                <div class="detail-meta-left">
+                                    @if (!string.IsNullOrEmpty(detailYear)) { <span class="detail-badge">@detailYear</span> }
+                                    @if (!string.IsNullOrEmpty(detailRating)) { <span class="detail-badge rating">@detailRating</span> }
+                                    @foreach (var g in detailGenres)
+                                    {
+                                        <span class="detail-badge genre">@g</span>
+                                    }
+                                </div>
+                                @if (detailReviews.Count > 0)
+                                {
+                                    var scores = detailReviews
+                                        .Where(r => double.TryParse(r.Score, out _))
+                                        .Select(r => double.Parse(r.Score))
+                                        .ToList();
+                                    @if (scores.Count > 0)
+                                    {
+                                        var avgScore = scores.Average();
+                                        var rating10 = avgScore > 10 ? avgScore / 10.0 : avgScore;
+                                        <span class="detail-badge cosmos-rating" title="Average critic score">
+                                            <svg class="planet-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                                <circle cx="12" cy="12" r="6"/>
+                                                <ellipse cx="12" cy="12" rx="11" ry="4" transform="rotate(-20 12 12)"/>
+                                            </svg>
+                                            @rating10.ToString("F1") / 10
+                                        </span>
+                                    }
+                                }
+                            </div>
+                            @if (!string.IsNullOrEmpty(detailTagline))
+                            {
+                                <p class="detail-tagline">"@detailTagline"</p>
+                            }
+                            <div class="detail-description">
+                                <p>@detailDesc</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    @if (detailDirectors.Count > 0)
+                    {
+                        <div class="detail-section">
+                            <h3>Directors</h3>
+                            <div class="detail-people">
+                                @foreach (var (name, originalName) in detailDirectors)
+                                {
+                                    <span class="person-link" @onclick="() => SearchPersonFromDetail(originalName)">@originalName</span>
+                                }
+                            </div>
+                        </div>
+                    }
+
+                    @if (detailActors.Count > 0)
+                    {
+                        <div class="detail-section">
+                            <h3>Cast</h3>
+                            <div class="detail-people">
+                                @foreach (var (name, originalName) in detailActors)
+                                {
+                                    <span class="person-link" @onclick="() => SearchPersonFromDetail(originalName)">@originalName</span>
+                                }
+                            </div>
+                        </div>
+                    }
+
+                    @if (detailReviews.Count > 0)
+                    {
+                        <div class="detail-section">
+                            <h3>Critic Reviews</h3>
+                            @foreach (var (review, score) in detailReviews)
+                            {
+                                <div class="review-item">
+                                    @if (!string.IsNullOrEmpty(score))
+                                    {
+                                        <span class="review-score">@score</span>
+                                    }
+                                    <span class="review-text">@review</span>
+                                </div>
+                            }
+                        </div>
+                    }
+                </div>
+            }
+            else
+            {
+                @* ── Poster Grid View ── *@
+                <div class="panel">
+                    <h3>Results (@response.MediaResults.Count)</h3>
+                    <div class="poster-grid">
+                        @foreach (var json in response.MediaResults)
+                        {
+                            var type = GetProp(json, "type") ?? "movie";
+
+                        @if (type == "movie")
+                        {
+                            var id = GetProp(json, "id") ?? "";
+                            var title = GetProp(json, "title") ?? "";
+                            var displayTitle = GetProp(json, "originalTitle") ?? title;
+                            var year = GetProp(json, "year") ?? "";
+                            var rating = GetProp(json, "mpaaRating") ?? "";
+                            var poster = GetProp(json, "posterUrl");
+
+                            <div class="poster-card" @onclick="() => PointReadAndShowDetail(id, title)">
+                                @if (!string.IsNullOrEmpty(poster))
+                                {
+                                    <img class="poster-img" src="@poster" alt="@displayTitle" loading="lazy" />
+                                }
+                                else
+                                {
+                                    <div class="poster-img-placeholder">🎬</div>
+                                }
+                                <div class="poster-info">
+                                    <div class="poster-title">@displayTitle</div>
+                                    <div class="poster-meta-row">
+                                        @if (!string.IsNullOrEmpty(year)) { <span class="poster-year">@year</span> }
+                                        @if (!string.IsNullOrEmpty(rating)) { <span class="poster-rating">@rating</span> }
+                                    </div>
+                                </div>
+                            </div>
+                        }
+                        else if (type == "person")
+                        {
+                            @* Embedded/Reference person docs: show as movie card using embedded movie data *@
+                            var movieTitle = GetProp(json, "movieTitle") ?? "";
+                            var poster = GetProp(json, "posterUrl");
+                            var movieId = GetProp(json, "movieId") ?? "";
+                            var releaseDate = GetProp(json, "releaseDate") ?? "";
+                            var rating = GetProp(json, "mpaaRating") ?? "";
+                            var personName = GetProp(json, "originalTitle") ?? GetProp(json, "title") ?? "";
+                            var roles = GetRoles(json);
+
+                            @if (roles.Count > 0)
+                            {
+                                @* Hybrid model: one person doc with roles array *@
+                                @foreach (var role in roles)
+                                {
+                                    <div class="poster-card" @onclick="() => PointReadAndShowDetail(role.MovieId, role.MovieTitle)">
+                                        @if (!string.IsNullOrEmpty(role.PosterUrl))
+                                        {
+                                            <img class="poster-img" src="@role.PosterUrl" alt="@role.MovieTitle" loading="lazy" />
+                                        }
+                                        else
+                                        {
+                                            <div class="poster-img-placeholder">🎬</div>
+                                        }
+                                        <div class="poster-info">
+                                            <div class="poster-title">@role.MovieTitle</div>
+                                            <div class="poster-meta-row">
+                                                @if (!string.IsNullOrEmpty(role.Year)) { <span class="poster-year">@role.Year</span> }
+                                                @if (!string.IsNullOrEmpty(role.MpaaRating)) { <span class="poster-rating">@role.MpaaRating</span> }
+                                            </div>
+                                        </div>
+                                    </div>
+                                }
+                            }
+                            else
+                            {
+                                @* Embedded/Reference: one person doc per movie *@
+                                <div class="poster-card" @onclick="() => PointReadAndShowDetail(movieId, movieTitle)">
+                                    @if (!string.IsNullOrEmpty(poster))
+                                    {
+                                        <img class="poster-img" src="@poster" alt="@movieTitle" loading="lazy" />
+                                    }
+                                    else
+                                    {
+                                        <div class="poster-img-placeholder">🎬</div>
+                                    }
+                                    <div class="poster-info">
+                                        <div class="poster-title">@movieTitle</div>
+                                        <div class="poster-meta-row">
+                                            @if (!string.IsNullOrEmpty(releaseDate)) { <span class="poster-year">@releaseDate</span> }
+                                            @if (!string.IsNullOrEmpty(rating)) { <span class="poster-rating">@rating</span> }
+                                        </div>
+                                    </div>
+                                </div>
+                            }
+                        }
+                    }
+                </div>
+                </div>
+            }
+
+            <div class="cost-tracker">
+                <div class="cost-tracker-header">
+                    <span class="cost-tracker-title">Model Cost Calculations</span>
+                    <button class="benchmark-clear" title="Reset costs" @onclick="Benchmark.ClearModelCosts">↺</button>
+                </div>
+                <table class="cost-table">
+                    <thead>
+                        <tr>
+                            <th>Model</th>
+                            @foreach (var action in Benchmark.ActionNames)
+                            {
+                                <th>@action</th>
+                            }
+                            <th>Total</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var model in Benchmark.ModelNames)
+                        {
+                            <tr>
+                                <td>@model</td>
+                                @foreach (var action in Benchmark.ActionNames)
+                                {
+                                    var cost = Benchmark.GetCost(model, action);
+                                    <td class="@(cost > 0 ? "cost-active" : "")">@cost.ToString("F2") RU</td>
+                                }
+                                @{ var total = Benchmark.GetModelTotal(model); }
+                                <td class="cost-total @(total > 0 ? "cost-active" : "")"><strong>@total.ToString("F2") RU</strong></td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+}
+
+<div class="about-section">
+    <h2>About Data Modeling in Cosmos DB</h2>
+
+    <p>
+        While there are multiple considerations in Cosmos DB for optimizing performance, understanding
+        <a href="https://docs.microsoft.com/en-us/azure/cosmos-db/modeling-data" target="_blank">data modeling</a>
+        and implementing it effectively can be critical in getting the best experience. This scenario we review different methods of modeling in Cosmos
+        demonstrates the benefits of thinking in a non-relational way. Note there is no one size fits all and the demo
+        itself unveiled multiple methods as we progressed through it.
+    </p>
+
+    <h3>Summary</h3>
+    <p>
+        Consider a media streaming site that wanted to have a fast browsing experience for their users located around
+        the world. As the information of the movies are created by the studios, even though generally consistent, the
+        flexibility
+        of being schema less was also a need. Cosmos being a NoSQL database allowed us to adjust the schema as needed without redefining the entire database schema like you might need in a relational database. The
+        service will likely have users increase faster than media releases so the ability to scale compute and storage
+        separate of each other was another desire. All of this made CosmosDB an attractive service.
+    </p>
+
+    <h3>Scenario</h3>
+    <p>
+        The media streaming company developed the site with CosmosDB driving the search and browsing experience. Certain
+        aspects of browsing are less than desirable in performance increasing the <a
+            href="https://docs.microsoft.com/en-us/azure/cosmos-db/request-units" target="_blank">request units</a> needed to provide
+        good performance but also the browsing experience as a user was less than ideal. We found that at any given time
+        there is 1000 people who are performing searches so for costs calculations, consider the query cost x 1000. Further consideration,
+        take a browsing scenario of a user searches a movie title and the results show an actor which they
+        want to look for other movies starring that actor. Hopping from movie to actor to movie is a common browsing pattern with various times it being searching a value or selecting.
+    </p>
+
+    <h3>Starting Model – "Single"</h3>
+    <p>
+        To try and balance our partitions, we went with a <a
+            href="https://docs.microsoft.com/en-us/azure/cosmos-db/partitioning-overview#choose-partitionkey" target="_blank">partitioning</a>
+        method of using the movie title as our partition key. Each document in our collection is a single movie. Example:
+    </p>
+    <pre class="doc-json">{
+    "id": "1234567890",
+    "type": "movie",
+    "title": "single doc movie",
+    "originalTitle": "Single Doc Movie",
+    "tagline": "A great tagline",
+    "description": "A movie about data modeling.",
+    "mpaaRating": "PG-13",
+    "releaseDate": "2001-06-15",
+    "year": 2001,
+    "posterUrl": "https://example.com/poster.jpg",
+    "genres": [
+        {
+            "name": "Action",
+            "id": "g001"
+        }
+    ],
+    "directors": [
+        {
+            "name": "best director",
+            "originalName": "Best Director",
+            "id": "0987654321"
+        }
+    ],
+    "actors": [
+        {
+            "name": "best actor",
+            "originalName": "Best Actor",
+            "id": "1029384576"
+        }
+    ],
+    "reviews": [
+        {
+            "id": "r001",
+            "criticReview": "A thrilling ride.",
+            "criticScore": 8.5
+        }
+    ]
+}</pre>
+
+    <p>
+        This presented little to no duplicates of the documents as most movies exist once or very few times. Since a user is not going to know a unique ID of a
+        movie, searching on a movie title is able to allow a partition based query and thus lower RU cost. However, as the
+        other information such as an actor or director is embedded information in the document we cannot directly query on that the same way. It in fact
+        requires unique queries to do this due to not knowing the value type. This made the site
+        have users put in the explicit type of value they are searching on. Below shows the RU cost of searching on a movie title 'Con Air' as a
+        Movie, selecting 'Nicolas Cage' to see his other movies and then selecting 'The Rock' from the results.
+    </p>
+    <table class="model-table">
+        <thead>
+            <tr><th>Movie Search</th><th>Actor Search</th><th>Movie Select</th><th>Total RU Cost</th></tr>
+        </thead>
+        <tbody>
+            <tr><td>3</td><td>15</td><td>1</td><td>19</td></tr>
+        </tbody>
+    </table>
+    <p>
+        Since the initial query is not a
+        <a href="https://docs.microsoft.com/en-us/dotnet/api/microsoft.azure.cosmos.container.readitemasync?view=azure-dotnet" target="_blank">point read</a>
+        as we are using a partition value but not partition value + ID of the document, we are going to see general cost of about 3 RU's even on a single small document result. Searching on an
+        actor results in a fanout query across all partitions as we do not know which documents contains those values and
+        increasing RU Cost.
+        The Movie Select portion is very cheap because we are able to know the exact movie the user
+        selected and thus can do a point query on that document with the ID and Title of the movie, this is often the best method to
+        query small documents assuming we have that information. All in all this works but certainly not an ideal experience for both the user and scalability
+        as the movie catalog grows.
+    </p>
+
+    <h3>Embedded Model</h3>
+    <p>
+        We then decided to improve searching by creating a collocated document of each Actor and Genre for a given
+        movie. The data is embedded just like the movie document with some minor changes to some properties. This simplified
+        application logic and improved user experience in comparison to the Single model as we do not have to specify the
+        type of value we are searching. The movie documents remained unchanged. Example:
+    </p>
+    <pre class="doc-json">{
+    "id": "mov12345act6789",
+    "type": "person",
+    "title": "best actor",
+    "originalTitle": "Best Actor",
+    "movieId": "1234567890",
+    "movieTitle": "Single Doc Movie",
+    "tagline": "A great tagline",
+    "description": "A movie about data modeling.",
+    "mpaaRating": "PG-13",
+    "releaseDate": "2001-06-15",
+    "year": 2001,
+    "posterUrl": "https://example.com/poster.jpg",
+    "genres": [
+        {
+            "name": "Action",
+            "id": "g001"
+        }
+    ],
+    "directors": [
+        {
+            "name": "best director",
+            "originalName": "Best Director",
+            "id": "0987654321"
+        }
+    ],
+    "actors": [
+        {
+            "name": "best actor",
+            "originalName": "Best Actor",
+            "id": "1029384576"
+        }
+    ],
+    "reviews": [
+        {
+            "id": "r001",
+            "criticReview": "A thrilling ride.",
+            "criticScore": 8.5
+        }
+    ]
+}</pre>
+
+    <p>
+        We see a large improvement on the Actor search for the same above scenario but others remain the same given the
+        existing optimal design.
+    </p>
+    <table class="model-table">
+        <thead>
+            <tr><th>Movie Search</th><th>Actor Search</th><th>Movie Select</th><th>Total RU Cost</th></tr>
+        </thead>
+        <tbody>
+            <tr><td>3</td><td>8</td><td>1</td><td>12</td></tr>
+        </tbody>
+    </table>
+    <p>
+        As we are embedding the data and querying on a partition value always, the cost was reduced by almost half for the
+        same lookup. We came to realize that the data in those documents was in many ways waste since we rely on the
+        movie itself to give us the details when browsing. As RU's are expressed as 1 RU the time to read a single 1KB
+        document, having a
+        document that is larger, is only going to increase the cost to some degree. We do also increase the amount of
+        documents and given their bigger size our storage jumped from about 500MB to 3GB for this model. However in
+        comparison to Compute, the cost of storage is almost nothing in the Cosmos space. This increase in storage results
+        in only about $0.75. This is worth it considering the performance gains we see and quickly recovered in less RU
+        needed
+        which is majority of the service cost.
+    </p>
+
+    <h3>Reference Model</h3>
+    <p>
+        To try and reduce the RU cost further and present information that is only going to be used at the time of, we used
+        the same collocation method in the embedded model however changed the documents to only represent the partitioned
+        data and
+        some basic information for the movie. This greatly reduced the size of the documents in many cases and made them far
+        more consistent in size. Example:
+    </p>
+    <pre class="doc-json">{
+    "id": "mov12345act6789",
+    "type": "person",
+    "title": "best actor",
+    "originalTitle": "Best Actor",
+    "movieId": "1234567890",
+    "movieTitle": "Single Doc Movie",
+    "mpaaRating": "PG-13",
+    "releaseDate": "2001-06-15",
+    "year": 2001,
+    "posterUrl": "https://example.com/poster.jpg",
+
+}</pre>
+    <p>
+        While not as large of an improvement as before, there was still gains in reduction on the RU cost. At scale this can
+        still be of benefit. We did however lose information such as genres of a movie but as we could not present that in a
+        usable fashion before, it was not as of much of a concern. Something of consideration if we wanted to provide that
+        information, it would require additional queries.
+    </p>
+    <table class="model-table">
+        <thead>
+            <tr><th>Movie Search</th><th>Actor Search</th><th>Movie Select</th><th>Total RU Cost</th></tr>
+        </thead>
+        <tbody>
+            <tr><td>3</td><td>7</td><td>1</td><td>11</td></tr>
+        </tbody>
+    </table>
+    <p>
+        Taking the learnings from each of these models we felt we could arrive at something that was even more performant.
+    </p>
+
+    <h3>Hybrid Model</h3>
+    <p>
+        By taking the always query on a partition value approach by collocating documents with embedded, reducing the amount
+        of content in
+        the documents to make them smaller with reference data, we designed a hybrid document that provides reference data
+        for each movie of an actor while embedding it
+        into a single document which we can obtained with a partition query and even a Point Read Query. Example:
+    </p>
+    <pre class="doc-json">{
+    "id": "act123",
+    "title": "best actor",
+    "originalTitle": "Best Actor",
+    "type": "person",
+    "roles": [
+        {
+            "movieId": "13579",
+            "movieTitle": "Movie 1",
+            "mpaaRating": "PG",
+            "releaseDate": "1901-03-10",
+            "year": 1901,
+            "posterUrl": "https://example.com/movie1.jpg",
+            "roleName": "Lead Hero"
+        },
+        {
+            "movieId": "24680",
+            "movieTitle": "Movie 2",
+            "mpaaRating": "R",
+            "releaseDate": "1902-07-22",
+            "year": 1902,
+            "posterUrl": "https://example.com/movie2.jpg",
+            "roleName": "Villain"
+        }
+    ]
+}</pre>
+    <p>
+        Looking at the results we can see a large improvement in RU cost that gets us basically the same movie search RU cost for
+        querying on an actor.
+    </p>
+    <table class="model-table">
+        <thead>
+            <tr><th>Movie Search</th><th>Actor Search</th><th>Movie Select</th><th>Total RU Cost</th></tr>
+        </thead>
+        <tbody>
+            <tr><td>3</td><td>3</td><td>1</td><td>7</td></tr>
+        </tbody>
+    </table>
+    <p>
+        In addition, we are returning some more results that are relavent such as the genre for the given movies or year
+        created. This can allow for a more rich user experience if they wanted to group or filter on these values without
+        excessive results being returned or even extra queries. So not only do we get better performance, we are actually
+        able to
+        enrich the user experience at the same time.
+    </p>
+    <p>
+        By rethinking our data model and taking advantage of the schema less design of CosmosDB, we were able to take the
+        same data and even the same partition key we started with and get a vastly improved performance experience by
+        modeling it in a way
+        that fit our use case. Given the scenario of 1000 users performing these actions we are seeing an over <b>2.5x</b>
+        performance improvement i.e. less RU's needed which resulted in an over <b>60%</b> service cost reduction on the to provide
+        not only the same performance experience but in fact an improved application features. Again, there is not one size fits all but you
+        will find there are many ways to get great performance out of CosmosDB with data modeling. If you want to see a fun
+        use case, search on the actor 'Brahmanandam'
+        for the different models.
+    </p>
+    <p>
+        A side note there was also the idea of
+        putting all of the actors of a common name into a document and having an array of each individual actor's
+        information as well as movies. We could then do the id and partition key for the document. When someone would search
+        it would always be Point Read Query which is going to be the least cost. However on large documents with multiple
+        actors and long resumes, it was almost negligible compared to the hybrid, that being said still more gains to be
+        made. It did require more logic on the application which with the already spaghetti code of this trying to present
+        so many methods of doing the same thing it was not worth implementing. Currently if a user searches on a single value
+        in the Hybrid model, if all other browsing is done by clicking different presented results, queries are done as Point Read Queries.
+        So roughly 3-4 RU's to start and 1-2 RU's for every other search, pretty impressive compared to the first model.
+    </p>
+    <p style="opacity: 0.6; font-size: 0.85rem;">
+        <i>This scenario discussed was tested with <a href="https://www.imdb.com/">IMDB</a> data that was available at the time. This represented a large population of documents that went into the millions for each model and does not match the current data stored for the interactive demo above.</i>
+    </p>
+</div>
+
+@code {
+    private string selectedModel = "Single";
+    private string searchType = "movie";
+    private string searchValue = "";
+    private bool isLoading;
+    private string? errorMessage;
+    private DataModelingResponse? response;
+    private JsonElement? selectedMovie;
+
+    private async Task HandleKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") await ExecuteSearch();
+    }
+
+    private async Task ExecuteSearch()
+    {
+        if (string.IsNullOrWhiteSpace(searchValue)) return;
+        isLoading = true;
+        errorMessage = null;
+        selectedMovie = null;
+
+        try
+        {
+            var type = selectedModel == "Single" ? searchType : null;
+            response = await Api.SearchAsync(selectedModel, searchValue, type);
+
+            if (response is null)
+                errorMessage = "No results found.";
+            else
+                RecordBenchmark();
+        }
+        catch (Exception ex) { errorMessage = $"Error: {ex.Message}"; }
+        finally { isLoading = false; }
+    }
+
+    private void ShowMovieDetail(JsonElement json)
+    {
+        selectedMovie = json;
+    }
+
+    private async Task PointReadAndShowDetail(string id, string title)
+    {
+        if (string.IsNullOrEmpty(id) || string.IsNullOrEmpty(title)) return;
+        isLoading = true;
+        errorMessage = null;
+
+        try
+        {
+            response = await Api.SearchAsync(selectedModel, title, docId: id);
+            if (response is null)
+            {
+                errorMessage = "Document not found.";
+            }
+            else
+            {
+                RecordBenchmark();
+                if (response.MediaResults.Count > 0)
+                {
+                    selectedMovie = response.MediaResults[0];
+                }
+            }
+        }
+        catch (Exception ex) { errorMessage = $"Error: {ex.Message}"; }
+        finally { isLoading = false; }
+    }
+
+    private void ClearDetail()
+    {
+        selectedMovie = null;
+    }
+
+    private async Task PointReadMovie(string id, string title)
+    {
+        if (string.IsNullOrEmpty(id) || string.IsNullOrEmpty(title)) return;
+        isLoading = true;
+        errorMessage = null;
+
+        try
+        {
+            response = await Api.SearchAsync(selectedModel, title, docId: id);
+            if (response is null) errorMessage = "Document not found.";
+            else RecordBenchmark();
+        }
+        catch (Exception ex) { errorMessage = $"Error: {ex.Message}"; }
+        finally { isLoading = false; }
+    }
+
+    private async Task SearchPersonFromDetail(string name)
+    {
+        selectedMovie = null;
+        searchValue = name;
+
+        if (selectedModel.Equals("Single", StringComparison.OrdinalIgnoreCase))
+            searchType = "person";
+
+        isLoading = true;
+        errorMessage = null;
+
+        try
+        {
+            var type = selectedModel.Equals("Single", StringComparison.OrdinalIgnoreCase) ? "person" : null;
+            response = await Api.SearchAsync(selectedModel, name, type);
+            if (response is null) errorMessage = "No results found.";
+            else RecordBenchmark();
+        }
+        catch (Exception ex) { errorMessage = $"Error: {ex.Message}"; }
+        finally { isLoading = false; }
+    }
+
+    private async Task SearchPerson(string name)
+    {
+        searchValue = name;
+        searchType = "person";
+        selectedMovie = null;
+        isLoading = true;
+        errorMessage = null;
+
+        try
+        {
+            var type = selectedModel == "Single" ? "person" : null;
+            response = await Api.SearchAsync(selectedModel, name, type);
+            if (response is null) errorMessage = "No results found.";
+            else RecordBenchmark();
+        }
+        catch (Exception ex) { errorMessage = $"Error: {ex.Message}"; }
+        finally { isLoading = false; }
+    }
+
+    private async Task SearchMovieByTitle(string title)
+    {
+        if (string.IsNullOrEmpty(title)) return;
+        searchValue = title.ToLowerInvariant();
+        searchType = "movie";
+        selectedMovie = null;
+        isLoading = true;
+        errorMessage = null;
+
+        try
+        {
+            response = await Api.SearchAsync(selectedModel, searchValue);
+            if (response is null) errorMessage = "No results found.";
+            else RecordBenchmark();
+        }
+        catch (Exception ex) { errorMessage = $"Error: {ex.Message}"; }
+        finally { isLoading = false; }
+    }
+
+    private void RecordBenchmark()
+    {
+        if (response?.RequestDiagnostics is { } diag && double.TryParse(diag.RequestCharge, out var ru))
+            Benchmark.RecordQuery(diag.QueryType, ru, diag.DataModel);
+    }
+
+    private static string? GetProp(JsonElement el, string prop)
+    {
+        if (el.ValueKind != JsonValueKind.Object || !el.TryGetProperty(prop, out var val))
+            return null;
+        return val.ValueKind switch
+        {
+            JsonValueKind.String => val.GetString(),
+            JsonValueKind.Number => val.GetRawText(),
+            JsonValueKind.True => "true",
+            JsonValueKind.False => "false",
+            JsonValueKind.Null => null,
+            _ => val.GetRawText()
+        };
+    }
+
+    private static List<string> GetArray(JsonElement el, string prop)
+    {
+        if (el.ValueKind != JsonValueKind.Object || !el.TryGetProperty(prop, out var arr) || arr.ValueKind != JsonValueKind.Array)
+            return [];
+        var result = new List<string>();
+        foreach (var item in arr.EnumerateArray())
+        {
+            var name = item.TryGetProperty("name", out var n) ? n.GetString() : null;
+            if (!string.IsNullOrEmpty(name)) result.Add(name);
+        }
+        return result;
+    }
+
+    private static List<(string Name, string OriginalName)> GetPeople(JsonElement el, string prop)
+    {
+        if (el.ValueKind != JsonValueKind.Object || !el.TryGetProperty(prop, out var arr) || arr.ValueKind != JsonValueKind.Array)
+            return [];
+        var result = new List<(string, string)>();
+        foreach (var item in arr.EnumerateArray())
+        {
+            var name = item.TryGetProperty("name", out var n) ? n.GetString() ?? "" : "";
+            var originalName = item.TryGetProperty("originalName", out var on) && on.ValueKind == JsonValueKind.String
+                ? on.GetString() ?? name : name;
+            result.Add((name, originalName));
+        }
+        return result;
+    }
+
+    private static List<(string Review, string Score)> GetReviews(JsonElement el)
+    {
+        if (el.ValueKind != JsonValueKind.Object || !el.TryGetProperty("reviews", out var arr) || arr.ValueKind != JsonValueKind.Array)
+            return [];
+        var result = new List<(string, string)>();
+        foreach (var item in arr.EnumerateArray())
+        {
+            var review = item.TryGetProperty("criticReview", out var r) && r.ValueKind == JsonValueKind.String
+                ? r.GetString() ?? "" : "";
+            var score = item.TryGetProperty("criticScore", out var s) && s.ValueKind == JsonValueKind.Number
+                ? s.GetRawText() : "";
+            result.Add((review, score));
+        }
+        return result;
+    }
+
+    private static List<(string MovieId, string MovieTitle, string RoleName, string? PosterUrl, string? Year, string? MpaaRating)> GetRoles(JsonElement el)
+    {
+        if (el.ValueKind != JsonValueKind.Object || !el.TryGetProperty("roles", out var roles) || roles.ValueKind != JsonValueKind.Array)
+            return [];
+        var result = new List<(string, string, string, string?, string?, string?)>();
+        foreach (var role in roles.EnumerateArray())
+        {
+            var movieId = role.TryGetProperty("movieId", out var mi) ? mi.GetString() ?? "" : "";
+            var movieTitle = role.TryGetProperty("movieTitle", out var mt) ? mt.GetString() ?? "" : "";
+            var roleName = role.TryGetProperty("roleName", out var rn) ? rn.GetString() ?? "" : "";
+            var posterUrl = role.TryGetProperty("posterUrl", out var pu) && pu.ValueKind == JsonValueKind.String ? pu.GetString() : null;
+            var year = role.TryGetProperty("year", out var y) && y.ValueKind == JsonValueKind.Number ? y.GetRawText() : null;
+            var mpaaRating = role.TryGetProperty("mpaaRating", out var mr) && mr.ValueKind == JsonValueKind.String ? mr.GetString() : null;
+            result.Add((movieId, movieTitle, roleName, posterUrl, year, mpaaRating));
+        }
+        return result;
+    }
+
+    private static string FormatJson(JsonElement el)
+    {
+        return JsonSerializer.Serialize(el, new JsonSerializerOptions { WriteIndented = true });
+    }
+
+    protected override void OnInitialized()
+    {
+        Benchmark.OnChange += StateHasChanged;
+    }
+
+    public void Dispose()
+    {
+        Benchmark.OnChange -= StateHasChanged;
+    }
+}

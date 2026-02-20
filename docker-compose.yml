@@ -1,0 +1,60 @@
+services:
+  cosmos-emulator:
+    image: mcr.microsoft.com/cosmosdb/linux/azure-cosmos-emulator:latest
+    container_name: cosmos-emulator
+    ports:
+      - "8081:8081"
+      - "10250-10255:10250-10255"
+    environment:
+      - AZURE_COSMOS_EMULATOR_PARTITION_COUNT=10
+      - AZURE_COSMOS_EMULATOR_ENABLE_DATA_PERSISTENCE=true
+    volumes:
+      - cosmos-data:/tmp/cosmos/appdata
+    mem_limit: 3g
+    cpus: 2.0
+
+  api:
+    build:
+      context: .
+      dockerfile: api/Dockerfile
+    container_name: learncosmosdb-api
+    ports:
+      - "5100:8080"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - ASPNETCORE_HTTP_PORTS=8080
+      - CosmosDB__Endpoint=https://cosmos-emulator:8081
+      # Well-known Cosmos DB Emulator key — safe to commit, not a real secret
+      - CosmosDB__Key=C2y6yDjf5/R+ob0N8A7Cgv30VRDJIWEHLM+4QDU5DE2nQ9nDuVTqobD4b8mGGyPMbIZnqyMsEcaGQy67XIw/Jw==
+      - CosmosDB__DatabaseName=DataModeling
+      - CosmosDB__AllowBulkExecution=false
+    depends_on:
+      - cosmos-emulator
+
+  web:
+    build:
+      context: .
+      dockerfile: web/Dockerfile
+    container_name: learncosmosdb-web
+    ports:
+      - "5200:80"
+    depends_on:
+      - api
+
+  processor:
+    build:
+      context: .
+      dockerfile: processor/Dockerfile
+    container_name: learncosmosdb-processor
+    environment:
+      - CosmosDB__Endpoint=https://cosmos-emulator:8081
+      - CosmosDB__Key=C2y6yDjf5/R+ob0N8A7Cgv30VRDJIWEHLM+4QDU5DE2nQ9nDuVTqobD4b8mGGyPMbIZnqyMsEcaGQy67XIw/Jw==
+      - CosmosDB__DatabaseName=DataModeling
+      - MediaApi__BaseUrl=https://api.battlecabbage.com
+    depends_on:
+      - cosmos-emulator
+    profiles:
+      - seed
+
+volumes:
+  cosmos-data:
