@@ -31,6 +31,10 @@ public static class DataModelingEndpoints
             {
                 return Results.BadRequest(ex.Message);
             }
+            catch (InvalidOperationException ex)
+            {
+                return Results.Problem(ex.Message, statusCode: 502);
+            }
         });
     }
 }

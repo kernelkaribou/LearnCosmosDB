@@ -82,6 +82,11 @@ public class DataModelingService(CosmosClient cosmosClient, IConfiguration confi
             while (iterator.HasMoreResults)
             {
                 using var batch = await iterator.ReadNextAsync();
+                if (!batch.IsSuccessStatusCode)
+                {
+                    logger.LogError("Cosmos query failed: {Status} {Error}", batch.StatusCode, batch.ErrorMessage);
+                    throw new InvalidOperationException($"Cosmos DB query failed: {batch.StatusCode}");
+                }
                 totalCharge += batch.Headers.RequestCharge;
                 diagnostics.ActivityId = batch.Headers.ActivityId;
 
