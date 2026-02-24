@@ -117,10 +117,10 @@ dotnet run
 - `ApiBaseUrl` — URL of the API (default: `http://localhost:5100`)
 
 **Processor** (environment variables):
-- `MediaApi__BaseUrl` — Battle Cabbage Media API base URL (default: `https://api.battlecabbage.com`)
-- `MediaApi__ApiKey` — API key for write operations (optional — only needed for `/generate`)
-- `CosmosDB__Endpoint` — Cosmos DB endpoint URL
+- `CosmosDB__Endpoint` — Cosmos DB endpoint URL (**required**)
+- `CosmosDB__Key` — Cosmos DB key (omit to use DefaultAzureCredential / Managed Identity)
 - `CosmosDB__DatabaseName` — Database name (default: `DataModeling`)
+- `MediaApi__BaseUrl` — Battle Cabbage Media API base URL
 
 ## Project Structure
 

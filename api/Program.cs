@@ -49,6 +49,7 @@ builder.Services.AddSingleton<CosmosClient>(sp =>
 });
 
 builder.Services.AddScoped<DataModelingService>();
+builder.Services.AddHttpClient();
 
 var app = builder.Build();
 

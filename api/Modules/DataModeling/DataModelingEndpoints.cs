@@ -1,3 +1,4 @@
+using System.Text.Json.Nodes;
 using Microsoft.AspNetCore.Mvc;
 
 namespace LearnCosmosDB.Api.Modules.DataModeling;
@@ -35,6 +36,26 @@ public static class DataModelingEndpoints
             {
                 return Results.Problem(ex.Message, statusCode: 502);
             }
+        });
+
+        group.MapGet("/hints", async (IHttpClientFactory httpClientFactory, IConfiguration config) =>
+        {
+            var baseUrl = config["MediaApi:BaseUrl"] ?? "https://api.battlecabbage.com";
+            using var http = httpClientFactory.CreateClient();
+
+            var movieTask = http.GetFromJsonAsync<JsonArray>($"{baseUrl}/movies/random");
+            var actorTask = http.GetFromJsonAsync<JsonArray>($"{baseUrl}/actors/top");
+
+            await Task.WhenAll(movieTask, actorTask);
+
+            var movies = movieTask.Result;
+            var actors = actorTask.Result;
+
+            var movieTitle = movies?.FirstOrDefault()?["title"]?.GetValue<string>();
+            var actorName = movies?.FirstOrDefault()?["actors"]?.AsArray().FirstOrDefault()?["actor"]?.GetValue<string>();
+            var topActorName = actors?.FirstOrDefault()?["actor"]?.GetValue<string>();
+
+            return Results.Ok(new { movieTitle, actorName, topActorName });
         });
     }
 }

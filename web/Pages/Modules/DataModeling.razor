@@ -1,7 +1,9 @@
 @page "/modules/datamodeling"
 @using System.Text.Json
+@using Microsoft.JSInterop
 @inject DataModelingApiClient Api
 @inject BenchmarkService Benchmark
+@inject IJSRuntime JS
 @implements IDisposable
 
 <PageTitle>Data Modeling - Learn Cosmos DB</PageTitle>
@@ -9,6 +11,20 @@
 <div class="page-header">
     <h1>Data Modeling</h1>
     <span class="page-subtitle">Explore how different document models affect query cost and performance</span>
+</div>
+
+<!-- Demo hints toggle -->
+<div class="hints-container">
+    <button class="hints-toggle" title="Sample search values" @onclick="ToggleHints">💡</button>
+    @if (showHints && hints is not null)
+    {
+        <div class="hints-overlay">
+            <div class="hints-header">Sample Values</div>
+            <div class="hints-row"><span class="hints-label">Movie</span> <span>@hints.MovieTitle</span> <button class="hints-copy" title="Copy" @onclick="() => CopyToClipboard(hints.MovieTitle)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button></div>
+            <div class="hints-row"><span class="hints-label">Actor (from movie)</span> <span>@hints.ActorName</span> <button class="hints-copy" title="Copy" @onclick="() => CopyToClipboard(hints.ActorName)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button></div>
+            <div class="hints-row"><span class="hints-label">Top Actor</span> <span>@hints.TopActorName</span> <button class="hints-copy" title="Copy" @onclick="() => CopyToClipboard(hints.TopActorName)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button></div>
+        </div>
+    }
 </div>
 
 <div class="search-row">
@@ -684,6 +700,8 @@
     private string? errorMessage;
     private DataModelingResponse? response;
     private JsonElement? selectedMovie;
+    private DemoHints? hints;
+    private bool showHints;
 
     private async Task HandleKeyDown(KeyboardEventArgs e)
     {
@@ -913,9 +931,18 @@
         return JsonSerializer.Serialize(el, new JsonSerializerOptions { WriteIndented = true });
     }
 
-    protected override void OnInitialized()
+    protected override async Task OnInitializedAsync()
     {
         Benchmark.OnChange += StateHasChanged;
+        hints = await Api.GetHintsAsync();
+    }
+
+    private void ToggleHints() => showHints = !showHints;
+
+    private async Task CopyToClipboard(string? text)
+    {
+        if (!string.IsNullOrEmpty(text))
+            await JS.InvokeVoidAsync("navigator.clipboard.writeText", text);
     }
 
     public void Dispose()

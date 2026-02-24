@@ -50,4 +50,23 @@ public class DataModelingApiClient(HttpClient httpClient)
             return null;
         }
     }
+
+    public async Task<DemoHints?> GetHintsAsync()
+    {
+        try
+        {
+            return await httpClient.GetFromJsonAsync<DemoHints>("/api/datamodeling/hints");
+        }
+        catch
+        {
+            return null;
+        }
+    }
+}
+
+public class DemoHints
+{
+    public string? MovieTitle { get; set; }
+    public string? ActorName { get; set; }
+    public string? TopActorName { get; set; }
 }
