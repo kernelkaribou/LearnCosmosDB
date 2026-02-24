@@ -14,7 +14,66 @@ An interactive learning platform for Azure Cosmos DB concepts. Each module demon
 ## Modules
 
 ### Data Modeling
+
 Demonstrates how document modeling in Cosmos DB affects query cost (RU), performance, and user experience using a movie database. Compares four models: Single, Embedded, Reference, and Hybrid.
+
+#### Document Models
+
+| Container | Partition Key | Description |
+|-----------|--------------|-------------|
+| **Single** | `/title` | One movie document per movie with actors, directors, and reviews embedded |
+| **Embedded** | `/title` | Movie documents + person documents with full movie data embedded |
+| **Reference** | `/title` | Movie documents + person documents with minimal reference data |
+| **Hybrid** | `/title` | Movie documents + one person document per unique person with a roles array |
+
+#### Processor
+
+The processor incrementally syncs movies from the [Battle Cabbage Media API](https://api.battlecabbage.com/docs) into all four containers. On each run it:
+
+1. Queries the **Single** container for the highest `apiId` already stored
+2. Fetches new movies from the API using `start_id`, `skip=1`, `order=asc` in batches of 50
+3. Upserts documents into all four model containers
+4. Repeats until the API returns fewer than 50 results
+
+#### Indexing Policies
+
+All containers exclude `/*` by default and only index the properties used in queries. Point reads (`ReadItemAsync` by `id` + partition key) do not use indexes.
+
+**Single** — supports title lookups, person searches via `ARRAY_CONTAINS`, and the processor's `MAX(c.apiId)` aggregation:
+
+```json
+{
+  "indexingMode": "consistent",
+  "automatic": true,
+  "includedPaths": [
+    { "path": "/title/?" },
+    { "path": "/type/?" },
+    { "path": "/apiId/?" },
+    { "path": "/actors/[]/name/?" },
+    { "path": "/directors/[]/name/?" }
+  ],
+  "excludedPaths": [
+    { "path": "/*" },
+    { "path": "/\"_etag\"/?" }
+  ]
+}
+```
+
+**Embedded, Reference, Hybrid** — only support title lookups:
+
+```json
+{
+  "indexingMode": "consistent",
+  "automatic": true,
+  "includedPaths": [
+    { "path": "/title/?" }
+  ],
+  "excludedPaths": [
+    { "path": "/*" },
+    { "path": "/\"_etag\"/?" }
+  ]
+}
+```
 
 ## Prerequisites
 
