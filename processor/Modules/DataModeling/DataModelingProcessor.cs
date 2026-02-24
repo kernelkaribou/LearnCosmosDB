@@ -236,7 +236,25 @@ public class DataModelingProcessor(BattleCabbageClient apiClient, CosmosClient c
 
         foreach (var person in personRoles.Values)
         {
-            await container.UpsertItemAsync(person, new PartitionKey(person.Title), cancellationToken: ct);
+            // Point read to check for existing person document and merge roles
+            try
+            {
+                var existing = await container.ReadItemAsync<MediaHybridPerson>(
+                    person.Id, new PartitionKey(person.Title), cancellationToken: ct);
+
+                var existingMovieIds = existing.Resource.Roles.Select(r => r.MovieId).ToHashSet();
+                foreach (var role in person.Roles)
+                {
+                    if (!existingMovieIds.Contains(role.MovieId))
+                        existing.Resource.Roles.Add(role);
+                }
+
+                await container.UpsertItemAsync(existing.Resource, new PartitionKey(person.Title), cancellationToken: ct);
+            }
+            catch (CosmosException ex) when (ex.StatusCode == System.Net.HttpStatusCode.NotFound)
+            {
+                await container.UpsertItemAsync(person, new PartitionKey(person.Title), cancellationToken: ct);
+            }
         }
 
         Console.WriteLine($"[DataModeling] Hybrid: upserted {movieCount} movie + {personRoles.Count} person documents.");
