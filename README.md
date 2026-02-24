@@ -120,7 +120,9 @@ dotnet run
 - `CosmosDB__Endpoint` — Cosmos DB endpoint URL (**required**)
 - `CosmosDB__Key` — Cosmos DB key (omit to use DefaultAzureCredential / Managed Identity)
 - `CosmosDB__DatabaseName` — Database name (default: `DataModeling`)
-- `MediaApi__BaseUrl` — Battle Cabbage Media API base URL
+- `MediaApi__BaseUrl` — Battle Cabbage Media API base URL (default: `https://api.battlecabbage.com`)
+- `Processor__BatchSize` — Movies per API call (1–100, default: `50`)
+- `Processor__MaxBatches` — Max number of batches to process (omit for unlimited)
 
 ## Project Structure
 

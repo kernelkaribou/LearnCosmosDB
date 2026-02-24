@@ -12,10 +12,8 @@ public class DataModelingProcessor(BattleCabbageClient apiClient, CosmosClient c
 {
     private static readonly string[] ModelNames = ["Single", "Embedded", "Reference", "Hybrid"];
 
-    public async Task ProcessAsync(int movieCount = 50, CancellationToken cancellationToken = default)
+    public async Task ProcessAsync(int batchSize = 50, int? maxBatches = null, CancellationToken cancellationToken = default)
     {
-        const int batchSize = 50;
-
         // Create database and containers
         var db = (await cosmosClient.CreateDatabaseIfNotExistsAsync(databaseName, cancellationToken: cancellationToken)).Database;
         Console.WriteLine($"[DataModeling] Database '{databaseName}' ready.");
@@ -34,8 +32,15 @@ public class DataModelingProcessor(BattleCabbageClient apiClient, CosmosClient c
             Console.WriteLine("[DataModeling] No existing movies in Cosmos. Fetching all movies...");
 
         int totalProcessed = 0;
+        int batchCount = 0;
         while (true)
         {
+            if (maxBatches.HasValue && batchCount >= maxBatches.Value)
+            {
+                Console.WriteLine($"[DataModeling] Reached max batch limit ({maxBatches.Value}).");
+                break;
+            }
+
             var movies = maxApiId.HasValue
                 ? await apiClient.GetMoviesAsync(skip: 1, limit: batchSize, startId: maxApiId.Value, cancellationToken: cancellationToken)
                 : await apiClient.GetMoviesAsync(skip: 0, limit: batchSize, cancellationToken: cancellationToken);
@@ -43,7 +48,8 @@ public class DataModelingProcessor(BattleCabbageClient apiClient, CosmosClient c
             if (movies.Count == 0)
                 break;
 
-            Console.WriteLine($"[DataModeling] Received batch of {movies.Count} movies.");
+            batchCount++;
+            Console.WriteLine($"[DataModeling] Batch {batchCount}: received {movies.Count} movies.");
 
             // Seed each model
             await SeedSingleModelAsync(db, movies, cancellationToken);
@@ -62,7 +68,7 @@ public class DataModelingProcessor(BattleCabbageClient apiClient, CosmosClient c
                 break;
         }
 
-        Console.WriteLine($"[DataModeling] Processing complete. {totalProcessed} new movies processed.");
+        Console.WriteLine($"[DataModeling] Processing complete. {totalProcessed} movies in {batchCount} batches.");
     }
 
     private async Task<int?> GetMaxApiIdAsync(Database db, CancellationToken ct)

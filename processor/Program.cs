@@ -22,9 +22,13 @@ if (string.IsNullOrEmpty(cosmosEndpoint))
     return 1;
 }
 
+var batchSize = int.TryParse(config["Processor:BatchSize"], out var bs) && bs > 0 ? Math.Min(bs, 100) : 50;
+var maxBatches = int.TryParse(config["Processor:MaxBatches"], out var mb) && mb > 0 ? mb : (int?)null;
+
 Console.WriteLine($"Media API: {apiBaseUrl}");
 Console.WriteLine($"Cosmos DB: {cosmosEndpoint}");
 Console.WriteLine($"Database:  {cosmosDatabase}");
+Console.WriteLine($"Batch:     {batchSize} per call{(maxBatches.HasValue ? $", max {maxBatches} batches" : ", unlimited")}");
 Console.WriteLine();
 
 using var httpClient = new HttpClient { BaseAddress = new Uri(apiBaseUrl) };
@@ -64,6 +68,6 @@ for (int i = 1; i <= maxRetries; i++)
     }
 }
 
-await processor.ProcessAsync();
+await processor.ProcessAsync(batchSize: batchSize, maxBatches: maxBatches);
 
 return 0;
