@@ -12,17 +12,9 @@ public class DataModelingProcessor(BattleCabbageClient apiClient, CosmosClient c
 {
     private static readonly string[] ModelNames = ["Single", "Embedded", "Reference", "Hybrid"];
 
-    public async Task ProcessAsync(int movieCount = 5, CancellationToken cancellationToken = default)
+    public async Task ProcessAsync(int movieCount = 50, CancellationToken cancellationToken = default)
     {
-        Console.WriteLine($"[DataModeling] Fetching {movieCount} movies from Battle Cabbage API...");
-        var movies = await apiClient.GetMoviesAsync(skip: 0, limit: movieCount, cancellationToken);
-        Console.WriteLine($"[DataModeling] Received {movies.Count} movies.");
-
-        if (movies.Count == 0)
-        {
-            Console.WriteLine("[DataModeling] No movies returned — nothing to seed.");
-            return;
-        }
+        const int batchSize = 50;
 
         // Create database and containers
         var db = (await cosmosClient.CreateDatabaseIfNotExistsAsync(databaseName, cancellationToken: cancellationToken)).Database;
@@ -34,13 +26,56 @@ public class DataModelingProcessor(BattleCabbageClient apiClient, CosmosClient c
             Console.WriteLine($"[DataModeling] Container '{model}' ready.");
         }
 
-        // Seed each model
-        await SeedSingleModelAsync(db, movies, cancellationToken);
-        await SeedEmbeddedModelAsync(db, movies, cancellationToken);
-        await SeedReferenceModelAsync(db, movies, cancellationToken);
-        await SeedHybridModelAsync(db, movies, cancellationToken);
+        // Find the highest movie_id already stored in the Single container
+        var maxApiId = await GetMaxApiIdAsync(db, cancellationToken);
+        if (maxApiId.HasValue)
+            Console.WriteLine($"[DataModeling] Highest apiId in Cosmos: {maxApiId.Value}. Fetching newer movies...");
+        else
+            Console.WriteLine("[DataModeling] No existing movies in Cosmos. Fetching all movies...");
 
-        Console.WriteLine("[DataModeling] Seeding complete.");
+        int totalProcessed = 0;
+        while (true)
+        {
+            var movies = maxApiId.HasValue
+                ? await apiClient.GetMoviesAsync(skip: 1, limit: batchSize, startId: maxApiId.Value, cancellationToken: cancellationToken)
+                : await apiClient.GetMoviesAsync(skip: 0, limit: batchSize, cancellationToken: cancellationToken);
+
+            if (movies.Count == 0)
+                break;
+
+            Console.WriteLine($"[DataModeling] Received batch of {movies.Count} movies.");
+
+            // Seed each model
+            await SeedSingleModelAsync(db, movies, cancellationToken);
+            await SeedEmbeddedModelAsync(db, movies, cancellationToken);
+            await SeedReferenceModelAsync(db, movies, cancellationToken);
+            await SeedHybridModelAsync(db, movies, cancellationToken);
+
+            totalProcessed += movies.Count;
+
+            // Update maxApiId to the last movie in this batch for the next iteration
+            var lastApiId = movies.Max(m => m.MovieId);
+            if (lastApiId.HasValue)
+                maxApiId = lastApiId.Value;
+
+            if (movies.Count < batchSize)
+                break;
+        }
+
+        Console.WriteLine($"[DataModeling] Processing complete. {totalProcessed} new movies processed.");
+    }
+
+    private async Task<int?> GetMaxApiIdAsync(Database db, CancellationToken ct)
+    {
+        var container = db.GetContainer("Single");
+        var query = new QueryDefinition("SELECT VALUE MAX(c.apiId) FROM c WHERE c.type = 'movie'");
+        using var iterator = container.GetItemQueryIterator<int?>(query);
+        if (iterator.HasMoreResults)
+        {
+            var response = await iterator.ReadNextAsync(ct);
+            return response.FirstOrDefault();
+        }
+        return null;
     }
 
     /// <summary>
@@ -216,6 +251,7 @@ public class DataModelingProcessor(BattleCabbageClient apiClient, CosmosClient c
         return new MediaMovie
         {
             Id = src.ExternalId,
+            ApiId = src.MovieId,
             Type = "movie",
             Title = src.Title.ToLowerInvariant(),
             OriginalTitle = src.Title,

@@ -64,6 +64,6 @@ for (int i = 1; i <= maxRetries; i++)
     }
 }
 
-await processor.ProcessAsync(movieCount: 5);
+await processor.ProcessAsync();
 
 return 0;

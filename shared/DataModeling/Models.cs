@@ -46,6 +46,7 @@ public class Review
 public class MediaMovie
 {
     public string Id { get; set; } = string.Empty;
+    public int? ApiId { get; set; }
     public string Type { get; set; } = "movie";
     public string Title { get; set; } = string.Empty;
     public string OriginalTitle { get; set; } = string.Empty;
