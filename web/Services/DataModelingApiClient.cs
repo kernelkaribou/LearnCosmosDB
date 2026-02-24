@@ -51,11 +51,13 @@ public class DataModelingApiClient(HttpClient httpClient)
         }
     }
 
+    private static readonly JsonSerializerOptions _hintsJsonOptions = new() { PropertyNameCaseInsensitive = true };
+
     public async Task<DemoHints?> GetHintsAsync()
     {
         try
         {
-            return await httpClient.GetFromJsonAsync<DemoHints>("/api/datamodeling/hints");
+            return await httpClient.GetFromJsonAsync<DemoHints>("/api/datamodeling/hints", _hintsJsonOptions);
         }
         catch
         {
@@ -69,4 +71,5 @@ public class DemoHints
     public string? MovieTitle { get; set; }
     public string? ActorName { get; set; }
     public string? TopActorName { get; set; }
+    public Dictionary<string, int>? ContainerCounts { get; set; }
 }
