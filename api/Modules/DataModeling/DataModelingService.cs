@@ -108,4 +108,22 @@ public class DataModelingService(CosmosClient cosmosClient, IConfiguration confi
 
         return response;
     }
+
+    public async Task<Dictionary<string, int>> GetContainerCountsAsync()
+    {
+        var counts = new Dictionary<string, int>();
+        var tasks = AllowedModels.Select(async model =>
+        {
+            var container = cosmosClient.GetContainer(_databaseName, model);
+            var query = new QueryDefinition("SELECT VALUE COUNT(1) FROM c");
+            using var iterator = container.GetItemQueryIterator<int>(query);
+            var result = await iterator.ReadNextAsync();
+            return (model, count: result.FirstOrDefault());
+        });
+
+        foreach (var task in await Task.WhenAll(tasks))
+            counts[task.model] = task.count;
+
+        return counts;
+    }
 }
