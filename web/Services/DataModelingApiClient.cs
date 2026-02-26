@@ -71,5 +71,6 @@ public class DemoHints
     public string? MovieTitle { get; set; }
     public string? ActorName { get; set; }
     public string? TopActorName { get; set; }
+    public string? TopDirectorName { get; set; }
     public Dictionary<string, int>? ContainerCounts { get; set; }
 }

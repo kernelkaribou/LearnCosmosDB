@@ -43,23 +43,27 @@ public static class DataModelingEndpoints
             var baseUrl = config["MediaApi:BaseUrl"] ?? "https://api.battlecabbage.com";
             using var http = httpClientFactory.CreateClient();
 
-            string? movieTitle = null, actorName = null, topActorName = null;
+            string? movieTitle = null, actorName = null, topActorName = null, topDirectorName = null;
             Dictionary<string, int>? counts = null;
 
             try
             {
                 var movieTask = http.GetFromJsonAsync<JsonArray>($"{baseUrl}/movies/random");
                 var actorTask = http.GetFromJsonAsync<JsonArray>($"{baseUrl}/actors/top");
+                var directorTask = http.GetFromJsonAsync<JsonArray>($"{baseUrl}/directors/top");
 
-                await Task.WhenAll(movieTask, actorTask);
+                await Task.WhenAll(movieTask, actorTask, directorTask);
 
                 var movies = movieTask.Result;
                 var actors = actorTask.Result;
+                var directors = directorTask.Result;
 
                 movieTitle = movies?.FirstOrDefault()?["title"]?.GetValue<string>();
                 actorName = movies?.FirstOrDefault()?["actors"]?.AsArray().FirstOrDefault()?["actor"]?.GetValue<string>();
                 if (actors is { Count: > 0 })
                     topActorName = actors[Random.Shared.Next(actors.Count)]?["actor"]?.GetValue<string>();
+                if (directors is { Count: > 0 })
+                    topDirectorName = directors[Random.Shared.Next(directors.Count)]?["director"]?.GetValue<string>();
             }
             catch { }
 
@@ -69,7 +73,7 @@ public static class DataModelingEndpoints
             }
             catch { }
 
-            return Results.Ok(new { movieTitle, actorName, topActorName, containerCounts = counts });
+            return Results.Ok(new { movieTitle, actorName, topActorName, topDirectorName, containerCounts = counts });
         });
     }
 }
