@@ -1,0 +1,677 @@
+@page "/demos/datamodeling"
+@using System.Text.Json
+@inject DataModelingApiClient Api
+@inject BenchmarkService Benchmark
+@implements IDisposable
+
+<PageTitle>Data Modeling Demo - Learn Cosmos DB</PageTitle>
+
+<div class="page-header">
+    <h1>Data Modeling</h1>
+    <span class="page-subtitle">Explore how different document models affect query cost and performance</span>
+    @if (hints?.ContainerCounts is not null)
+    {
+        <div class="ix-help-wrapper">
+            <button class="ix-help-btn" title="Document counts" @onclick="() => showCounts = !showCounts">
+                <span class="ix-help-icon">?</span>
+            </button>
+            @if (showCounts)
+            {
+                <div class="ix-help-popup">
+                    <div class="hints-header">Document Counts</div>
+                    @foreach (var kv in hints.ContainerCounts)
+                    {
+                        <div class="hints-row"><span class="hints-label">@kv.Key</span> <span>@kv.Value.ToString("N0")</span></div>
+                    }
+                </div>
+            }
+        </div>
+    }
+</div>
+
+<div class="demo-top-row">
+    <div class="demo-instructions">
+        <p>
+            Search for movies, actors, or directors across four different document models.
+            Each model stores the same data but structured differently, showing how document
+            design directly impacts query cost (RUs) and performance in Cosmos DB.
+        </p>
+    </div>
+    <div class="demo-controls-col">
+        @if (hints is not null)
+        {
+            <div class="demo-sample-values">
+                <div class="demo-hints-inline">
+                    <span class="hints-header" style="margin-bottom: 0;">Sample Search Values</span>
+                    <div class="hints-row"><span class="hints-label">Movie</span> <span>@hints.MovieTitle</span> <button class="hints-copy" title="Populate search" @onclick="() => PopulateSearch(hints.MovieTitle)">▶</button></div>
+                    <div class="hints-row"><span class="hints-label">Director</span> <span>@hints.TopDirectorName</span> <button class="hints-copy" title="Populate search" @onclick="() => PopulateSearch(hints.TopDirectorName)">▶</button></div>
+                </div>
+            </div>
+        }
+        <div class="demo-controls">
+            <select @bind="selectedModel">
+                <option value="Single">Single</option>
+                <option value="Embedded">Embedded</option>
+                <option value="Reference">Reference</option>
+                <option value="Hybrid">Hybrid</option>
+            </select>
+
+            @if (selectedModel == "Single")
+            {
+                <select @bind="searchType">
+                <option value="movie">Movie</option>
+                <option value="person">Actor / Director</option>
+            </select>
+        }
+
+        <input type="text" @bind="searchValue" @bind:event="oninput"
+               @onkeydown="HandleKeyDown" placeholder="Enter search term..." />
+        <button @onclick="ExecuteSearch" disabled="@isLoading">
+            @(isLoading ? "Searching..." : "Search")
+        </button>
+        </div>
+    </div>
+</div>
+
+@if (errorMessage is not null)
+{
+    <div class="error-message">@errorMessage</div>
+}
+
+@if (response is not null)
+{
+    <div class="results-panel">
+        <div class="panel panel-left">
+            <div class="diag-summary">
+                <h3>Query Diagnostics</h3>
+                <div class="diag-row">
+                    <span class="diag-label">RU Cost</span>
+                    <span class="diag-value ru-highlight">@response.RequestDiagnostics.RequestCharge RU</span>
+                </div>
+                <div class="diag-row">
+                    <span class="diag-label">Query Type</span>
+                    <span class="diag-value">@response.RequestDiagnostics.QueryType</span>
+                </div>
+                @if (response.RequestDiagnostics.QueryText is not null)
+                {
+                    <div class="diag-row">
+                        <span class="diag-label">Query</span>
+                        <span class="diag-value" style="font-family: monospace; font-size: 0.78rem;">@response.RequestDiagnostics.QueryText</span>
+                    </div>
+                }
+                @if (response.RequestDiagnostics.QueryType == "Point Read")
+                {
+                    <div class="diag-row">
+                        <span class="diag-label">Document ID</span>
+                        <span class="diag-value diag-truncate">@response.RequestDiagnostics.DocId</span>
+                    </div>
+                    <div class="diag-row">
+                        <span class="diag-label">Partition Key</span>
+                        <span class="diag-value diag-truncate">@response.RequestDiagnostics.FormattedSearchValue</span>
+                    </div>
+                }
+                else
+                {
+                    <div class="diag-row">
+                        <span class="diag-label">Search Value</span>
+                        <span class="diag-value">@response.RequestDiagnostics.SubmittedSearchValue</span>
+                    </div>
+                }
+                <div class="diag-row">
+                    <span class="diag-label">Data Model</span>
+                    <span class="diag-value">@response.RequestDiagnostics.DataModel</span>
+                </div>
+                <div class="diag-row">
+                    <span class="diag-label">Documents</span>
+                    <span class="diag-value">@response.MediaResults.Count</span>
+                </div>
+            </div>
+
+            @if (response.MediaResults.Count > 0)
+            {
+                <h3 style="margin-top: 1rem;">Raw JSON</h3>
+                <pre class="doc-json">@FormatJson(selectedMovie ?? response.MediaResults[0])</pre>
+            }
+        </div>
+
+        <div class="panel-right">
+            @if (selectedMovie is not null)
+            {
+                @* ── Movie Detail View ── *@
+                var m = selectedMovie.Value;
+                var detailTitle = GetProp(m, "originalTitle") ?? GetProp(m, "title") ?? "";
+                var detailPoster = GetProp(m, "posterUrl");
+                var detailYear = GetProp(m, "year") ?? "";
+                var detailRating = GetProp(m, "mpaaRating") ?? "";
+                var detailDesc = GetProp(m, "description") ?? GetProp(m, "tagline") ?? "";
+                var detailTagline = GetProp(m, "tagline") ?? "";
+                var detailGenres = GetArray(m, "genres");
+                var detailActors = GetPeople(m, "actors");
+                var detailDirectors = GetPeople(m, "directors");
+                var detailReviews = GetReviews(m);
+
+                <div class="panel movie-detail">
+                    <button class="detail-back" @onclick="ClearDetail">← Back to results</button>
+                    <div class="detail-header">
+                        @if (!string.IsNullOrEmpty(detailPoster))
+                        {
+                            <img class="detail-poster" src="@detailPoster" alt="@detailTitle" />
+                        }
+                        else
+                        {
+                            <div class="detail-poster-placeholder">🎬</div>
+                        }
+                        <div class="detail-info">
+                            <h2 class="detail-title">@detailTitle</h2>
+                            <div class="detail-meta">
+                                <div class="detail-meta-left">
+                                    @if (!string.IsNullOrEmpty(detailYear)) { <span class="detail-badge">@detailYear</span> }
+                                    @if (!string.IsNullOrEmpty(detailRating)) { <span class="detail-badge rating">@detailRating</span> }
+                                    @foreach (var g in detailGenres)
+                                    {
+                                        <span class="detail-badge genre">@g</span>
+                                    }
+                                </div>
+                                @if (detailReviews.Count > 0)
+                                {
+                                    var scores = detailReviews
+                                        .Where(r => double.TryParse(r.Score, out _))
+                                        .Select(r => double.Parse(r.Score))
+                                        .ToList();
+                                    @if (scores.Count > 0)
+                                    {
+                                        var avgScore = scores.Average();
+                                        var rating10 = avgScore > 10 ? avgScore / 10.0 : avgScore;
+                                        <span class="detail-badge cosmos-rating" title="Average critic score">
+                                            <svg class="planet-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                                <circle cx="12" cy="12" r="6"/>
+                                                <ellipse cx="12" cy="12" rx="11" ry="4" transform="rotate(-20 12 12)"/>
+                                            </svg>
+                                            @rating10.ToString("F1") / 10
+                                        </span>
+                                    }
+                                }
+                            </div>
+                            @if (!string.IsNullOrEmpty(detailTagline))
+                            {
+                                <p class="detail-tagline">"@detailTagline"</p>
+                            }
+                            <div class="detail-description">
+                                <p>@detailDesc</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    @if (detailDirectors.Count > 0)
+                    {
+                        <div class="detail-section">
+                            <h3>Directors</h3>
+                            <div class="detail-people">
+                                @foreach (var (name, originalName, imageUrl) in detailDirectors)
+                                {
+                                    <span class="person-card-link" @onclick="() => SearchPersonFromDetail(originalName)">
+                                        @if (!string.IsNullOrEmpty(imageUrl))
+                                        {
+                                            <img class="person-avatar" src="@imageUrl" alt="@originalName"
+                                                 onerror="this.style.display='none';this.nextElementSibling.style.display='flex';" />
+                                            <span class="person-avatar-placeholder" style="display:none;">
+                                                <svg viewBox="0 0 64 64" class="silhouette-icon"><circle cx="32" cy="24" r="12"/><ellipse cx="32" cy="56" rx="20" ry="14"/></svg>
+                                            </span>
+                                        }
+                                        else
+                                        {
+                                            <span class="person-avatar-placeholder">
+                                                <svg viewBox="0 0 64 64" class="silhouette-icon"><circle cx="32" cy="24" r="12"/><ellipse cx="32" cy="56" rx="20" ry="14"/></svg>
+                                            </span>
+                                        }
+                                        <span class="person-name">@originalName</span>
+                                    </span>
+                                }
+                            </div>
+                        </div>
+                    }
+
+                    @if (detailActors.Count > 0)
+                    {
+                        <div class="detail-section">
+                            <h3>Cast</h3>
+                            <div class="detail-people">
+                                @foreach (var (name, originalName, imageUrl) in detailActors)
+                                {
+                                    <span class="person-card-link" @onclick="() => SearchPersonFromDetail(originalName)">
+                                        @if (!string.IsNullOrEmpty(imageUrl))
+                                        {
+                                            <img class="person-avatar" src="@imageUrl" alt="@originalName"
+                                                 onerror="this.style.display='none';this.nextElementSibling.style.display='flex';" />
+                                            <span class="person-avatar-placeholder" style="display:none;">
+                                                <svg viewBox="0 0 64 64" class="silhouette-icon"><circle cx="32" cy="24" r="12"/><ellipse cx="32" cy="56" rx="20" ry="14"/></svg>
+                                            </span>
+                                        }
+                                        else
+                                        {
+                                            <span class="person-avatar-placeholder">
+                                                <svg viewBox="0 0 64 64" class="silhouette-icon"><circle cx="32" cy="24" r="12"/><ellipse cx="32" cy="56" rx="20" ry="14"/></svg>
+                                            </span>
+                                        }
+                                        <span class="person-name">@originalName</span>
+                                    </span>
+                                }
+                            </div>
+                        </div>
+                    }
+
+                    @if (detailReviews.Count > 0)
+                    {
+                        <div class="detail-section">
+                            <h3>Critic Reviews</h3>
+                            @foreach (var (review, score) in detailReviews)
+                            {
+                                <div class="review-item">
+                                    @if (!string.IsNullOrEmpty(score))
+                                    {
+                                        <span class="review-score">@score</span>
+                                    }
+                                    <span class="review-text">@review</span>
+                                </div>
+                            }
+                        </div>
+                    }
+                </div>
+            }
+            else
+            {
+                @* ── Poster Grid View ── *@
+                <div class="panel">
+                    <h3>Results (@response.MediaResults.Count)</h3>
+                    <div class="poster-grid">
+                        @foreach (var json in response.MediaResults)
+                        {
+                            var type = GetProp(json, "type") ?? "movie";
+
+                        @if (type == "movie")
+                        {
+                            var id = GetProp(json, "id") ?? "";
+                            var title = GetProp(json, "title") ?? "";
+                            var displayTitle = GetProp(json, "originalTitle") ?? title;
+                            var year = GetProp(json, "year") ?? "";
+                            var rating = GetProp(json, "mpaaRating") ?? "";
+                            var poster = GetProp(json, "posterUrl");
+
+                            <div class="poster-card" @onclick="() => PointReadAndShowDetail(id, title)">
+                                @if (!string.IsNullOrEmpty(poster))
+                                {
+                                    <img class="poster-img" src="@poster" alt="@displayTitle" loading="lazy" />
+                                }
+                                else
+                                {
+                                    <div class="poster-img-placeholder">🎬</div>
+                                }
+                                <div class="poster-info">
+                                    <div class="poster-title">@displayTitle</div>
+                                    <div class="poster-meta-row">
+                                        @if (!string.IsNullOrEmpty(year)) { <span class="poster-year">@year</span> }
+                                        @if (!string.IsNullOrEmpty(rating)) { <span class="poster-rating">@rating</span> }
+                                    </div>
+                                </div>
+                            </div>
+                        }
+                        else if (type == "person")
+                        {
+                            @* Embedded/Reference person docs: show as movie card using embedded movie data *@
+                            var movieTitle = GetProp(json, "movieTitle") ?? "";
+                            var poster = GetProp(json, "posterUrl");
+                            var movieId = GetProp(json, "movieId") ?? "";
+                            var releaseDate = GetProp(json, "releaseDate") ?? "";
+                            var rating = GetProp(json, "mpaaRating") ?? "";
+                            var personName = GetProp(json, "originalTitle") ?? GetProp(json, "title") ?? "";
+                            var roles = GetRoles(json);
+
+                            @if (roles.Count > 0)
+                            {
+                                @* Hybrid model: one person doc with roles array *@
+                                @foreach (var role in roles)
+                                {
+                                    <div class="poster-card" @onclick="() => PointReadAndShowDetail(role.MovieId, role.MovieTitle)">
+                                        @if (!string.IsNullOrEmpty(role.PosterUrl))
+                                        {
+                                            <img class="poster-img" src="@role.PosterUrl" alt="@role.MovieTitle" loading="lazy" />
+                                        }
+                                        else
+                                        {
+                                            <div class="poster-img-placeholder">🎬</div>
+                                        }
+                                        <div class="poster-info">
+                                            <div class="poster-title">@role.MovieTitle</div>
+                                            <div class="poster-meta-row">
+                                                @if (!string.IsNullOrEmpty(role.Year)) { <span class="poster-year">@role.Year</span> }
+                                                @if (!string.IsNullOrEmpty(role.MpaaRating)) { <span class="poster-rating">@role.MpaaRating</span> }
+                                            </div>
+                                        </div>
+                                    </div>
+                                }
+                            }
+                            else
+                            {
+                                @* Embedded/Reference: one person doc per movie *@
+                                <div class="poster-card" @onclick="() => PointReadAndShowDetail(movieId, movieTitle)">
+                                    @if (!string.IsNullOrEmpty(poster))
+                                    {
+                                        <img class="poster-img" src="@poster" alt="@movieTitle" loading="lazy" />
+                                    }
+                                    else
+                                    {
+                                        <div class="poster-img-placeholder">🎬</div>
+                                    }
+                                    <div class="poster-info">
+                                        <div class="poster-title">@movieTitle</div>
+                                        <div class="poster-meta-row">
+                                            @if (!string.IsNullOrEmpty(releaseDate)) { <span class="poster-year">@releaseDate</span> }
+                                            @if (!string.IsNullOrEmpty(rating)) { <span class="poster-rating">@rating</span> }
+                                        </div>
+                                    </div>
+                                </div>
+                            }
+                        }
+                    }
+                </div>
+                </div>
+            }
+
+            <div class="cost-tracker">
+                <div class="cost-tracker-header">
+                    <span class="cost-tracker-title">Model Cost Calculations</span>
+                    <button class="benchmark-clear" title="Reset costs" @onclick="Benchmark.ClearModelCosts">↺</button>
+                </div>
+                <table class="cost-table">
+                    <thead>
+                        <tr>
+                            <th>Model</th>
+                            @foreach (var action in Benchmark.ActionNames)
+                            {
+                                <th>@action</th>
+                            }
+                            <th>Total</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var model in Benchmark.ModelNames)
+                        {
+                            <tr>
+                                <td>@model</td>
+                                @foreach (var action in Benchmark.ActionNames)
+                                {
+                                    var cost = Benchmark.GetCost(model, action);
+                                    <td class="@(cost > 0 ? "cost-active" : "")">@cost.ToString("F2") RU</td>
+                                }
+                                @{ var total = Benchmark.GetModelTotal(model); }
+                                <td class="cost-total @(total > 0 ? "cost-active" : "")"><strong>@total.ToString("F2") RU</strong></td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+}
+
+<div class="demo-module-link">
+    <a href="modules/datamodeling">View the full Data Modeling module →</a>
+</div>
+
+@code {
+    private string selectedModel = "Single";
+    private string searchType = "movie";
+    private string searchValue = "";
+    private bool isLoading;
+    private string? errorMessage;
+    private DataModelingResponse? response;
+    private JsonElement? selectedMovie;
+    private DemoHints? hints;
+    private bool showCounts;
+
+    private async Task HandleKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") await ExecuteSearch();
+    }
+
+    private async Task ExecuteSearch()
+    {
+        if (string.IsNullOrWhiteSpace(searchValue)) return;
+        isLoading = true;
+        errorMessage = null;
+        selectedMovie = null;
+
+        try
+        {
+            var type = selectedModel == "Single" ? searchType : null;
+            response = await Api.SearchAsync(selectedModel, searchValue, type);
+
+            if (response is null)
+                errorMessage = "No results found.";
+            else
+                RecordBenchmark();
+        }
+        catch (Exception ex) { errorMessage = $"Error: {ex.Message}"; }
+        finally { isLoading = false; }
+    }
+
+    private void ShowMovieDetail(JsonElement json)
+    {
+        selectedMovie = json;
+    }
+
+    private async Task PointReadAndShowDetail(string id, string title)
+    {
+        if (string.IsNullOrEmpty(id) || string.IsNullOrEmpty(title)) return;
+        isLoading = true;
+        errorMessage = null;
+
+        try
+        {
+            response = await Api.SearchAsync(selectedModel, title, docId: id);
+            if (response is null)
+            {
+                errorMessage = "Document not found.";
+            }
+            else
+            {
+                RecordBenchmark();
+                if (response.MediaResults.Count > 0)
+                {
+                    selectedMovie = response.MediaResults[0];
+                }
+            }
+        }
+        catch (Exception ex) { errorMessage = $"Error: {ex.Message}"; }
+        finally { isLoading = false; }
+    }
+
+    private void ClearDetail()
+    {
+        selectedMovie = null;
+    }
+
+    private async Task PointReadMovie(string id, string title)
+    {
+        if (string.IsNullOrEmpty(id) || string.IsNullOrEmpty(title)) return;
+        isLoading = true;
+        errorMessage = null;
+
+        try
+        {
+            response = await Api.SearchAsync(selectedModel, title, docId: id);
+            if (response is null) errorMessage = "Document not found.";
+            else RecordBenchmark();
+        }
+        catch (Exception ex) { errorMessage = $"Error: {ex.Message}"; }
+        finally { isLoading = false; }
+    }
+
+    private async Task SearchPersonFromDetail(string name)
+    {
+        selectedMovie = null;
+        searchValue = name;
+
+        if (selectedModel.Equals("Single", StringComparison.OrdinalIgnoreCase))
+            searchType = "person";
+
+        isLoading = true;
+        errorMessage = null;
+
+        try
+        {
+            var type = selectedModel.Equals("Single", StringComparison.OrdinalIgnoreCase) ? "person" : null;
+            response = await Api.SearchAsync(selectedModel, name, type);
+            if (response is null) errorMessage = "No results found.";
+            else RecordBenchmark();
+        }
+        catch (Exception ex) { errorMessage = $"Error: {ex.Message}"; }
+        finally { isLoading = false; }
+    }
+
+    private async Task SearchPerson(string name)
+    {
+        searchValue = name;
+        searchType = "person";
+        selectedMovie = null;
+        isLoading = true;
+        errorMessage = null;
+
+        try
+        {
+            var type = selectedModel == "Single" ? "person" : null;
+            response = await Api.SearchAsync(selectedModel, name, type);
+            if (response is null) errorMessage = "No results found.";
+            else RecordBenchmark();
+        }
+        catch (Exception ex) { errorMessage = $"Error: {ex.Message}"; }
+        finally { isLoading = false; }
+    }
+
+    private async Task SearchMovieByTitle(string title)
+    {
+        if (string.IsNullOrEmpty(title)) return;
+        searchValue = title.ToLowerInvariant();
+        searchType = "movie";
+        selectedMovie = null;
+        isLoading = true;
+        errorMessage = null;
+
+        try
+        {
+            response = await Api.SearchAsync(selectedModel, searchValue);
+            if (response is null) errorMessage = "No results found.";
+            else RecordBenchmark();
+        }
+        catch (Exception ex) { errorMessage = $"Error: {ex.Message}"; }
+        finally { isLoading = false; }
+    }
+
+    private void RecordBenchmark()
+    {
+        if (response?.RequestDiagnostics is { } diag && double.TryParse(diag.RequestCharge, out var ru))
+            Benchmark.RecordQuery(diag.QueryType, ru, diag.DataModel);
+    }
+
+    private static string? GetProp(JsonElement el, string prop)
+    {
+        if (el.ValueKind != JsonValueKind.Object || !el.TryGetProperty(prop, out var val))
+            return null;
+        return val.ValueKind switch
+        {
+            JsonValueKind.String => val.GetString(),
+            JsonValueKind.Number => val.GetRawText(),
+            JsonValueKind.True => "true",
+            JsonValueKind.False => "false",
+            JsonValueKind.Null => null,
+            _ => val.GetRawText()
+        };
+    }
+
+    private static List<string> GetArray(JsonElement el, string prop)
+    {
+        if (el.ValueKind != JsonValueKind.Object || !el.TryGetProperty(prop, out var arr) || arr.ValueKind != JsonValueKind.Array)
+            return [];
+        var result = new List<string>();
+        foreach (var item in arr.EnumerateArray())
+        {
+            var name = item.TryGetProperty("name", out var n) ? n.GetString() : null;
+            if (!string.IsNullOrEmpty(name)) result.Add(name);
+        }
+        return result;
+    }
+
+    private static List<(string Name, string OriginalName, string? ImageUrl)> GetPeople(JsonElement el, string prop)
+    {
+        if (el.ValueKind != JsonValueKind.Object || !el.TryGetProperty(prop, out var arr) || arr.ValueKind != JsonValueKind.Array)
+            return [];
+        var result = new List<(string, string, string?)>();
+        foreach (var item in arr.EnumerateArray())
+        {
+            var name = item.TryGetProperty("name", out var n) ? n.GetString() ?? "" : "";
+            var originalName = item.TryGetProperty("originalName", out var on) && on.ValueKind == JsonValueKind.String
+                ? on.GetString() ?? name : name;
+            var imageUrl = item.TryGetProperty("imageUrl", out var img) && img.ValueKind == JsonValueKind.String
+                ? img.GetString() : null;
+            result.Add((name, originalName, imageUrl));
+        }
+        return result;
+    }
+
+    private static List<(string Review, string Score)> GetReviews(JsonElement el)
+    {
+        if (el.ValueKind != JsonValueKind.Object || !el.TryGetProperty("reviews", out var arr) || arr.ValueKind != JsonValueKind.Array)
+            return [];
+        var result = new List<(string, string)>();
+        foreach (var item in arr.EnumerateArray())
+        {
+            var review = item.TryGetProperty("criticReview", out var r) && r.ValueKind == JsonValueKind.String
+                ? r.GetString() ?? "" : "";
+            var score = item.TryGetProperty("criticScore", out var s) && s.ValueKind == JsonValueKind.Number
+                ? s.GetRawText() : "";
+            result.Add((review, score));
+        }
+        return result;
+    }
+
+    private static List<(string MovieId, string MovieTitle, string RoleName, string? PosterUrl, string? Year, string? MpaaRating)> GetRoles(JsonElement el)
+    {
+        if (el.ValueKind != JsonValueKind.Object || !el.TryGetProperty("roles", out var roles) || roles.ValueKind != JsonValueKind.Array)
+            return [];
+        var result = new List<(string, string, string, string?, string?, string?)>();
+        foreach (var role in roles.EnumerateArray())
+        {
+            var movieId = role.TryGetProperty("movieId", out var mi) ? mi.GetString() ?? "" : "";
+            var movieTitle = role.TryGetProperty("movieTitle", out var mt) ? mt.GetString() ?? "" : "";
+            var roleName = role.TryGetProperty("roleName", out var rn) ? rn.GetString() ?? "" : "";
+            var posterUrl = role.TryGetProperty("posterUrl", out var pu) && pu.ValueKind == JsonValueKind.String ? pu.GetString() : null;
+            var year = role.TryGetProperty("year", out var y) && y.ValueKind == JsonValueKind.Number ? y.GetRawText() : null;
+            var mpaaRating = role.TryGetProperty("mpaaRating", out var mr) && mr.ValueKind == JsonValueKind.String ? mr.GetString() : null;
+            result.Add((movieId, movieTitle, roleName, posterUrl, year, mpaaRating));
+        }
+        return result;
+    }
+
+    private static string FormatJson(JsonElement el)
+    {
+        return JsonSerializer.Serialize(el, new JsonSerializerOptions { WriteIndented = true });
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        Benchmark.OnChange += StateHasChanged;
+        hints = await Api.GetHintsAsync();
+    }
+
+
+    private void PopulateSearch(string? text)
+    {
+        if (!string.IsNullOrEmpty(text))
+            searchValue = text;
+    }
+
+    public void Dispose()
+    {
+        Benchmark.OnChange -= StateHasChanged;
+    }
+}

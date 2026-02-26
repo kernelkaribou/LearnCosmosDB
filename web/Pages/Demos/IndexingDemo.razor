@@ -1,0 +1,169 @@
+@page "/demos/indexing"
+@using System.Text.Json
+@using LearnCosmosDB.Shared.Indexing
+@inject IndexingApiClient Api
+
+<PageTitle>Indexing Demo - Learn Cosmos DB</PageTitle>
+
+<div class="page-header">
+    <h1>Indexing</h1>
+    <span class="page-subtitle">See how indexing strategies affect the RU cost of writes</span>
+</div>
+
+<div class="demo-top-row">
+    <div class="demo-instructions">
+        <p>
+            Every time you click Write Event, the API generates a realistic browsing analytics
+            event and writes the same document to three Cosmos DB containers. Each container has
+            a different indexing policy, which directly affects how many Request Units (RUs) the
+            write costs.
+        </p>
+    </div>
+    <div class="demo-controls-col">
+        <div class="demo-controls">
+            <button @onclick="WriteEvent" disabled="@isLoading">
+                @(isLoading ? "Writing..." : "Write Event")
+            </button>
+        </div>
+    </div>
+</div>
+
+@if (errorMessage is not null)
+{
+    <div class="error-message">@errorMessage</div>
+}
+
+@if (lastResponse?.Event is not null)
+{
+    <div class="results-panel ix-results-panel">
+        <div class="panel panel-left">
+            <h3>Document Written</h3>
+            <pre class="doc-json">@FormatEventJson(lastResponse.Event)</pre>
+        </div>
+        <div class="ix-policies-column">
+            @{ var ruByContainer = lastResponse.Results.ToDictionary(r => r.Container, r => r.RequestCharge); }
+            <div class="panel ix-policy-box">
+                <div class="ix-policy-header">
+                    <h3>Default</h3>
+                    <span class="ix-ru-badge">@ruByContainer.GetValueOrDefault("Default").ToString("F2") RU</span>
+                </div>
+                <pre class="doc-json">@DefaultPolicy</pre>
+            </div>
+            <div class="panel ix-policy-box">
+                <div class="ix-policy-header">
+                    <h3>Implicit</h3>
+                    <span class="ix-ru-badge">@ruByContainer.GetValueOrDefault("Implicit").ToString("F2") RU</span>
+                </div>
+                <pre class="doc-json">@ImplicitPolicy</pre>
+            </div>
+            <div class="panel ix-policy-box">
+                <div class="ix-policy-header">
+                    <h3>Explicit</h3>
+                    <span class="ix-ru-badge">@ruByContainer.GetValueOrDefault("Explicit").ToString("F2") RU</span>
+                </div>
+                <pre class="doc-json">@ExplicitPolicy</pre>
+            </div>
+        </div>
+    </div>
+}
+
+<div class="demo-module-link">
+    <a href="modules/indexing">View the full Indexing module →</a>
+</div>
+
+@code {
+    private static readonly string[] Actions =
+    [
+        "search", "view_details", "play_trailer", "add_to_watchlist",
+        "rate_movie", "browse_genre", "view_recommendations"
+    ];
+
+    private static readonly Random Rng = new();
+
+    private const string DefaultPolicy = @"{
+  ""indexingMode"": ""consistent"",
+  ""automatic"": true,
+  ""includedPaths"": [
+    {
+      ""path"": ""/*""
+    }
+  ],
+  ""excludedPaths"": []
+}";
+
+    private const string ImplicitPolicy = @"{
+  ""indexingMode"": ""consistent"",
+  ""automatic"": true,
+  ""includedPaths"": [
+    {
+      ""path"": ""/*""
+    }
+  ],
+  ""excludedPaths"": [
+    {
+      ""path"": ""/client/*""
+    },
+    {
+      ""path"": ""/geo/*""
+    },
+    {
+      ""path"": ""/performance/*""
+    },
+    {
+      ""path"": ""/context/*""
+    }
+  ]
+}";
+
+    private const string ExplicitPolicy = @"{
+  ""indexingMode"": ""consistent"",
+  ""automatic"": true,
+  ""includedPaths"": [
+    {
+      ""path"": ""/timestamp/?""
+    }
+  ],
+  ""excludedPaths"": [
+    {
+      ""path"": ""/*""
+    }
+  ]
+}";
+
+    private bool isLoading;
+
+    private string? errorMessage;
+    private IndexingResponse? lastResponse;
+
+    private async Task WriteEvent()
+    {
+        isLoading = true;
+        errorMessage = null;
+
+        try
+        {
+            var action = Actions[Rng.Next(Actions.Length)];
+            lastResponse = await Api.SimulateEventAsync(action);
+
+            if (lastResponse is null)
+                errorMessage = "Failed to write event. Is the API running?";
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error: {ex.Message}";
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private static string FormatEventJson(BrowsingEvent evt)
+    {
+        return JsonSerializer.Serialize(evt, new JsonSerializerOptions
+        {
+            WriteIndented = true,
+            PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+        });
+    }
+}
