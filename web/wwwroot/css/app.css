@@ -743,7 +743,8 @@ pre.doc-json {
 }
 
 .module-card .module-icon { font-size: 2rem; margin-bottom: 0.75rem; }
-.module-card .module-title { font-size: 1.1rem; font-weight: 600; color: var(--text-primary); }
+.module-card .module-title { font-size: 1.1rem; font-weight: 600; color: var(--text-primary); display: flex; align-items: center; gap: 0.4rem; }
+.module-card .module-title img, .module-card .module-title svg { width: 18px; height: 18px; border-radius: 4px; flex-shrink: 0; }
 .module-card .module-desc { font-size: 0.85rem; color: var(--text-secondary); margin-top: 0.4rem; }
 
 /* ── Home Page ────────────────────────────────── */
