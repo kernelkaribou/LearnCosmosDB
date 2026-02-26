@@ -26,6 +26,20 @@ Demonstrates how document modeling in Cosmos DB affects query cost (RU), perform
 | **Reference** | `/title` | Movie documents + person documents with minimal reference data |
 | **Hybrid** | `/title` | Movie documents + one person document per unique person with a roles array |
 
+### Indexing
+
+Demonstrates how Cosmos DB indexing policies affect the RU cost of writes. A realistic browsing analytics event (with media, client, geo, performance, and context metadata) is written to three containers with different indexing strategies.
+
+#### Containers
+
+| Container | Partition Key | Indexing Strategy |
+|-----------|--------------|-------------------|
+| **Default** | `/sessionId` | All properties indexed (`/*`) — Cosmos DB default |
+| **Implicit** | `/sessionId` | Excludes `/client/*`, `/geo/*`, `/performance/*`, `/context/*` from indexing |
+| **Explicit** | `/sessionId` | Excludes `/*`, only includes `/timestamp/?` |
+
+The `Indexing` database and containers are auto-created by the API on startup with the correct indexing policies. No processor or manual setup is needed.
+
 #### Processor
 
 The processor incrementally syncs movies from the [Battle Cabbage Media API](https://api.battlecabbage.com/docs) into all four containers. On each run it:
@@ -112,6 +126,7 @@ dotnet run
 - `CosmosDB__Endpoint` — Cosmos DB endpoint URL
 - `CosmosDB__Key` — Cosmos DB key (omit to use DefaultAzureCredential)
 - `CosmosDB__DatabaseName` — Database name (default: `DataModeling`)
+- `CosmosDB__IndexingDatabaseName` — Indexing database name (default: `Indexing`)
 
 **Web** (`web/wwwroot/appsettings.json`):
 - `ApiBaseUrl` — URL of the API (default: `http://localhost:5100`)

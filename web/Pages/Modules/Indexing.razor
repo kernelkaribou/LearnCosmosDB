@@ -1,0 +1,275 @@
+@page "/modules/indexing"
+@using System.Text.Json
+@using LearnCosmosDB.Shared.Indexing
+@inject IndexingApiClient Api
+
+<PageTitle>Indexing - Learn Cosmos DB</PageTitle>
+
+<div class="page-header">
+    <h1>Indexing</h1>
+    <span class="page-subtitle">See how indexing strategies affect the RU cost of writes</span>
+    <div class="ix-help-wrapper">
+        <button class="ix-help-btn" title="How it works" @onclick="() => showHelp = !showHelp">
+            <span class="ix-help-icon">?</span>
+        </button>
+        @if (showHelp)
+        {
+            <div class="ix-help-popup">
+                <div class="hints-header">How It Works</div>
+                <p class="ix-help-text">
+                    Every time you click Write Event, the API generates a realistic browsing analytics
+                    event and writes the same document to three Cosmos DB containers. Each container has
+                    a different indexing policy, which directly affects how many Request Units (RUs) the
+                    write costs.
+                </p>
+            </div>
+        }
+    </div>
+</div>
+
+<div class="search-row">
+    <div class="demo-controls">
+        <button @onclick="WriteEvent" disabled="@isLoading">
+            @(isLoading ? "Writing..." : "Write Event")
+        </button>
+    </div>
+</div>
+
+@if (errorMessage is not null)
+{
+    <div class="error-message">@errorMessage</div>
+}
+
+@if (lastResponse?.Event is not null)
+{
+    <div class="results-panel ix-results-panel">
+        <div class="panel panel-left">
+            <h3>Document Written</h3>
+            <pre class="doc-json">@FormatEventJson(lastResponse.Event)</pre>
+        </div>
+        <div class="ix-policies-column">
+            @{ var ruByContainer = lastResponse.Results.ToDictionary(r => r.Container, r => r.RequestCharge); }
+            <div class="panel ix-policy-box">
+                <div class="ix-policy-header">
+                    <h3>Default</h3>
+                    <span class="ix-ru-badge">@ruByContainer.GetValueOrDefault("Default").ToString("F2") RU</span>
+                </div>
+                <pre class="doc-json">@DefaultPolicy</pre>
+            </div>
+            <div class="panel ix-policy-box">
+                <div class="ix-policy-header">
+                    <h3>Implicit</h3>
+                    <span class="ix-ru-badge">@ruByContainer.GetValueOrDefault("Implicit").ToString("F2") RU</span>
+                </div>
+                <pre class="doc-json">@ImplicitPolicy</pre>
+            </div>
+            <div class="panel ix-policy-box">
+                <div class="ix-policy-header">
+                    <h3>Explicit</h3>
+                    <span class="ix-ru-badge">@ruByContainer.GetValueOrDefault("Explicit").ToString("F2") RU</span>
+                </div>
+                <pre class="doc-json">@ExplicitPolicy</pre>
+            </div>
+        </div>
+    </div>
+}
+
+<div class="about-section">
+    <h2>About Indexing in Azure Cosmos DB</h2>
+
+    <p>
+        Being a schema-agnostic database, Cosmos DB will automatically <a href="https://learn.microsoft.com/en-us/azure/cosmos-db/index-overview" target="_blank">index</a> every property for each item in your containers. This can be highly beneficial from a query performance perspective while not requiring administration effort. Unlike reads in Cosmos DB which read RU cost being heavily influenced by document model, query patterns and document size, write RU costs are almost exclusively impacted by the indexing policies in place. Depending on the use case and workload scenarios, it can be beneficial to review what your indexing policies will be for your containers and their corresponding application patterns. This demonstration focuses on the high level indexing policy concepts and not a focus on types of indexes e.g. fulltext, vector, spatial, etc. Cosmos DB allows us to take a lazy approach all the way to an agressive approach with tools for guidance on how to implement. Furthermore, indexes take disk space and while storage is typically fractional to the cost of compute cost, intentional indexing policies can reduce overall costs where extra storage is not warranted. Indexing policies are configured at the container level and can be updated at any time.
+    </p>
+
+    <h3>Default</h3>
+    <p>
+        Without any configuration on a Cosmos DB container the properties of each item will be automatically indexed allowing for a hands off approach to the performance of read operations from your application without having to think through what your query patterns will look like.  This is represented in the following way for a container indexing policy configuration:
+    </p>
+    <pre class="doc-json">{
+  "indexingMode": "consistent",
+  "automatic": true,
+  "includedPaths": [
+    {
+      "path": "/*"
+    }
+  ],
+  "excludedPaths": [
+    {
+      "path": "/\"_etag\"/?"
+    }
+  ]
+}</pre>
+    <p>
+        This effectively says all paths are included in your documents and we exclude nothing. Note the <a href="https://learn.microsoft.com/en-us/azure/cosmos-db/database-transactions-optimistic-concurrency#implement-optimistic-concurrency-control-using-etag-and-http-headers" target="_blank">_etag</a> is Cosmos DB metadata for updates of a document and is excluded and should be excluded as it's not for direct query purposes.  
+    </p>
+    <p>
+        This convenience does come at a cost. Each write, specifically each property will be indexed for the document with a small RU cost per property. The more properties, the more RU's. In addition the index size will be grow adding additional storage cost. If we have application query patterns that are non deterministic of the data access this may be the best approach.
+    </p>
+
+    <h3>Implicit</h3>
+    <p>
+        In scenarios where there is a desire to reduce RU cost of writes but at the same time allow flexibility to what could be changing or variant query patterns, implicit indexing policies can give us benefit without creating new efforts to manage the index policies in what could be a changing Cosmos DB use case.
+    </p>
+    <p>
+        This strategy relies on implicitly indexing all properties that are not explicitly denied. This would be the process of maintaining the wildcard path for our included paths while specifying specific paths that we do not. In our example we determined that we will knowingly never query upon client metadata information or other application information so by excluding those paths we can reduce our costs but still allow for added data captured to be automatically indexed for what could be new access patterns, knowing that it could be reviewed and adjusted again at a later time.
+    </p>
+    <pre class="doc-json">{
+  "indexingMode": "consistent",
+  "automatic": true,
+  "includedPaths": [
+    {
+      "path": "/*"
+    }
+  ],
+  "excludedPaths": [
+    {
+      "path": "/client/*"
+    },
+    {
+      "path": "/geo/*"
+    },
+    {
+      "path": "/performance/*"
+    },
+    {
+      "path": "/context/*"
+    },
+    {
+      "path": "/\"_etag\"/?"
+    }
+  ]
+}</pre>
+    <p>
+        We are removing the client, geo, performance and context paths, including other paths underneath it. There is methods of implementing specific properties within an excluded path but in this example we do a broad exclusion for those specific paths. This is easily adjusted to add or remove paths while having a catchall for any unknown or untested properties.
+    </p>
+
+    <h3>Explicit</h3>
+    <p>
+        In situations where we know exactly what properties will be used and want to get the most optimal write RU costs, we can explicitly include the properties to be indexed with a catchall for any and all properties we do not want to be indexed. Effectively an inverse of what we do in the implicit priority policy approach.
+    </p>
+    <pre class="doc-json">{
+  "indexingMode": "consistent",
+  "automatic": true,
+  "includedPaths": [
+    {
+      "path": "/timestamp/?"
+    }
+  ],
+  "excludedPaths": [
+    {
+      "path": "/*"
+    },
+    {
+      "path": "/\"_etag\"/?"
+    }
+  ]
+}</pre>
+    <p>
+        This might seem like something to implment as a default at first, there is the risk of impacting future changes without keeping the index policy as a regularly reviewed process for any application changes that introduce new data. There becomes an even closer relationship with application development and the utilized data that requires consideration when taking this policy approach.
+    </p>
+
+    <h3>Modes</h3>
+    <p>
+        Cosmos DB at a high level has two modes of indexing, <em>Consistent</em> and <em>None</em>. Consistent being both the default and often used. It is a synchronous indexing method that is during write of the document. In the unique scenario where you are using cosmos as a key value store and are not performing queries that filter on various properties i.e. direct document retrieval, indexing can simply be disabled.
+    </p>
+    <p>
+        In this scenario, we arguably could could have disabled indexing for the type of use pattern of the data access but even with wanting basic insights into number of events in the past time windows, having the timestamp indexed allows us to interact with windows of data effectively. More importantly, this is for demonstration purposes of this concept.
+    </p>
+</div>
+
+@code {
+    private static readonly string[] Actions =
+    [
+        "search", "view_details", "play_trailer", "add_to_watchlist",
+        "rate_movie", "browse_genre", "view_recommendations"
+    ];
+
+    private static readonly Random Rng = new();
+
+    private const string DefaultPolicy = @"{
+  ""indexingMode"": ""consistent"",
+  ""automatic"": true,
+  ""includedPaths"": [
+    {
+      ""path"": ""/*""
+    }
+  ],
+  ""excludedPaths"": []
+}";
+
+    private const string ImplicitPolicy = @"{
+  ""indexingMode"": ""consistent"",
+  ""automatic"": true,
+  ""includedPaths"": [
+    {
+      ""path"": ""/*""
+    }
+  ],
+  ""excludedPaths"": [
+    {
+      ""path"": ""/client/*""
+    },
+    {
+      ""path"": ""/geo/*""
+    },
+    {
+      ""path"": ""/performance/*""
+    },
+    {
+      ""path"": ""/context/*""
+    }
+  ]
+}";
+
+    private const string ExplicitPolicy = @"{
+  ""indexingMode"": ""consistent"",
+  ""automatic"": true,
+  ""includedPaths"": [
+    {
+      ""path"": ""/timestamp/?""
+    }
+  ],
+  ""excludedPaths"": [
+    {
+      ""path"": ""/*""
+    }
+  ]
+}";
+
+    private bool isLoading;
+    private bool showHelp;
+    private string? errorMessage;
+    private IndexingResponse? lastResponse;
+
+    private async Task WriteEvent()
+    {
+        isLoading = true;
+        errorMessage = null;
+
+        try
+        {
+            var action = Actions[Rng.Next(Actions.Length)];
+            lastResponse = await Api.SimulateEventAsync(action);
+
+            if (lastResponse is null)
+                errorMessage = "Failed to write event. Is the API running?";
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error: {ex.Message}";
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private static string FormatEventJson(BrowsingEvent evt)
+    {
+        return JsonSerializer.Serialize(evt, new JsonSerializerOptions
+        {
+            WriteIndented = true,
+            PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+        });
+    }
+}

@@ -1,4 +1,5 @@
 using LearnCosmosDB.Api.Modules.DataModeling;
+using LearnCosmosDB.Api.Modules.Indexing;
 using Microsoft.Azure.Cosmos;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -49,6 +50,7 @@ builder.Services.AddSingleton<CosmosClient>(sp =>
 });
 
 builder.Services.AddScoped<DataModelingService>();
+builder.Services.AddScoped<IndexingService>();
 builder.Services.AddHttpClient();
 
 var app = builder.Build();
@@ -56,5 +58,28 @@ var app = builder.Build();
 app.UseCors();
 app.MapHealthChecks("/healthz");
 app.MapDataModelingEndpoints();
+app.MapIndexingEndpoints();
+
+// Auto-create Indexing database and containers for local development only
+if (app.Environment.IsDevelopment())
+{
+    using var scope = app.Services.CreateScope();
+    var indexingService = scope.ServiceProvider.GetRequiredService<IndexingService>();
+    var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+
+    for (var attempt = 1; attempt <= 10; attempt++)
+    {
+        try
+        {
+            await indexingService.EnsureContainersAsync();
+            break;
+        }
+        catch (Exception ex) when (attempt < 10 && (ex is HttpRequestException or CosmosException))
+        {
+            logger.LogWarning("Cosmos DB not ready (attempt {Attempt}/10): {Message}", attempt, ex.Message);
+            await Task.Delay(TimeSpan.FromSeconds(10));
+        }
+    }
+}
 
 app.Run();

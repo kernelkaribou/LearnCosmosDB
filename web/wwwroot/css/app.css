@@ -1042,3 +1042,115 @@ pre.doc-json {
 }
 
 .hints-copy:hover { opacity: 0.8; }
+
+/* ===== Indexing Module ===== */
+
+.ix-results-panel {
+    height: auto;
+    min-height: 500px;
+    justify-content: start;
+    grid-template-columns: 3fr 2fr;
+}
+
+.ix-policies-column {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    overflow-y: auto;
+}
+
+.ix-policy-box {
+    flex-shrink: 0;
+    padding: 0.5rem;
+}
+
+.ix-policy-box pre.doc-json {
+    margin: 0;
+    padding: 1rem;
+}
+
+.ix-help-wrapper {
+    position: relative;
+    margin-left: auto;
+}
+
+.ix-help-btn {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    border: 1.5px solid var(--text-muted);
+    background: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+}
+
+.ix-help-btn:hover {
+    border-color: var(--cosmos-blue);
+}
+
+.ix-help-btn:hover .ix-help-icon {
+    color: var(--cosmos-blue);
+}
+
+.ix-help-icon {
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: var(--text-muted);
+    line-height: 1;
+}
+
+.ix-help-popup {
+    position: absolute;
+    top: calc(100% + 8px);
+    right: 0;
+    min-width: 340px;
+    max-width: 420px;
+    background: var(--bg-page);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 0.75rem;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.25);
+    font-size: 0.8rem;
+    z-index: 100;
+}
+
+.ix-policy-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 0.5rem;
+}
+
+.ix-policy-header h3 {
+    margin: 0;
+    border-bottom: none;
+    padding-bottom: 0;
+}
+
+.ix-ru-badge {
+    display: inline-block;
+    padding: 0.3rem 0.75rem;
+    background: var(--cosmos-blue);
+    color: white;
+    border-radius: 6px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.ix-help-text {
+    margin: 0;
+    color: var(--text-primary);
+    font-size: 0.82rem;
+    line-height: 1.6;
+}
+
+.ix-policy-json {
+    margin: 0; padding: 0.6rem; background: var(--bg-code); color: var(--text-code);
+    border-radius: 6px; font-size: 0.75rem; overflow-x: auto; line-height: 1.5;
+}
+
+

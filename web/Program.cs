@@ -12,8 +12,13 @@ builder.Services.AddHttpClient<DataModelingApiClient>(client =>
 {
     client.BaseAddress = new Uri(apiBaseUrl);
 });
+builder.Services.AddHttpClient<IndexingApiClient>(client =>
+{
+    client.BaseAddress = new Uri(apiBaseUrl);
+});
 
 builder.Services.AddSingleton<BenchmarkService>();
+builder.Services.AddSingleton<IndexingBenchmarkService>();
 builder.Services.AddSingleton<ThemeService>();
 
 await builder.Build().RunAsync();
