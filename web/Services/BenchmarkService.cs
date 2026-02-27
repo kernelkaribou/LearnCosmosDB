@@ -70,4 +70,10 @@ public class BenchmarkService
         _modelCosts.Clear();
         OnChange?.Invoke();
     }
+
+    public void ClearModel(string model)
+    {
+        _modelCosts.Remove(model);
+        OnChange?.Invoke();
+    }
 }
