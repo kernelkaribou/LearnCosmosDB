@@ -455,11 +455,6 @@
         finally { isLoading = false; }
     }
 
-    private void ShowMovieDetail(JsonElement json)
-    {
-        selectedMovie = json;
-    }
-
     private async Task PointReadAndShowDetail(string id, string title)
     {
         if (string.IsNullOrEmpty(id) || string.IsNullOrEmpty(title)) return;
