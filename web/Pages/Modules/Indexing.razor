@@ -1,181 +1,621 @@
 @page "/modules/indexing"
 @using System.Text.Json
 @using LearnCosmosDB.Shared.Indexing
+@using Microsoft.JSInterop
 @inject IndexingApiClient Api
+@inject IndexingBenchmarkService Benchmark
+@inject IJSRuntime JS
+@implements IDisposable
 
 <PageTitle>Indexing - Learn Cosmos DB</PageTitle>
 
 <div class="page-header">
     <h1>Indexing</h1>
     <span class="page-subtitle">See how indexing strategies affect the RU cost of writes</span>
-    <div class="ix-help-wrapper">
-        <button class="ix-help-btn" title="How it works" @onclick="() => showHelp = !showHelp">
-            <span class="ix-help-icon">?</span>
-        </button>
-        @if (showHelp)
-        {
-            <div class="ix-help-popup">
-                <div class="hints-header">How It Works</div>
-                <p class="ix-help-text">
-                    Every time you click Write Event, the API generates a realistic browsing analytics
-                    event and writes the same document to three Cosmos DB containers. Each container has
-                    a different indexing policy, which directly affects how many Request Units (RUs) the
-                    write costs.
-                </p>
-            </div>
-        }
-    </div>
 </div>
 
-<div class="search-row">
-    <div class="demo-controls">
-        <button @onclick="WriteEvent" disabled="@isLoading">
-            @(isLoading ? "Writing..." : "Write Event")
-        </button>
-    </div>
-</div>
-
-@if (errorMessage is not null)
-{
-    <div class="error-message">@errorMessage</div>
-}
-
-@if (lastResponse?.Event is not null)
-{
-    <div class="results-panel ix-results-panel">
-        <div class="panel panel-left">
-            <h3>Document Written</h3>
-            <pre class="doc-json">@FormatEventJson(lastResponse.Event)</pre>
-        </div>
-        <div class="ix-policies-column">
-            @{ var ruByContainer = lastResponse.Results.ToDictionary(r => r.Container, r => r.RequestCharge); }
-            <div class="panel ix-policy-box">
-                <div class="ix-policy-header">
-                    <h3>Default</h3>
-                    <span class="ix-ru-badge">@ruByContainer.GetValueOrDefault("Default").ToString("F2") RU</span>
-                </div>
-                <pre class="doc-json">@DefaultPolicy</pre>
-            </div>
-            <div class="panel ix-policy-box">
-                <div class="ix-policy-header">
-                    <h3>Implicit</h3>
-                    <span class="ix-ru-badge">@ruByContainer.GetValueOrDefault("Implicit").ToString("F2") RU</span>
-                </div>
-                <pre class="doc-json">@ImplicitPolicy</pre>
-            </div>
-            <div class="panel ix-policy-box">
-                <div class="ix-policy-header">
-                    <h3>Explicit</h3>
-                    <span class="ix-ru-badge">@ruByContainer.GetValueOrDefault("Explicit").ToString("F2") RU</span>
-                </div>
-                <pre class="doc-json">@ExplicitPolicy</pre>
-            </div>
-        </div>
-    </div>
-}
-
-<div class="about-section">
+@* ══════════════════════════════════════════════════════════════════
+   Section 1 — About
+   ══════════════════════════════════════════════════════════════════ *@
+<section class="ix-guide-section">
     <h2>About Indexing in Azure Cosmos DB</h2>
+    <p>
+        Being a schema-agnostic database, Cosmos DB will automatically
+        <a href="https://learn.microsoft.com/en-us/azure/cosmos-db/index-overview" target="_blank">index</a>
+        every property for each item in your containers. This can be highly beneficial from a query performance
+        perspective while not requiring administration effort. Unlike reads where RU cost is influenced by document
+        model, query patterns and document size, <strong>write RU costs are almost exclusively impacted by the
+        indexing policies in place</strong>.
+    </p>
+    <p>
+        This demonstration focuses on three indexing policy strategies — Default, Implicit, and Explicit — and how
+        each affects the RU cost when writing the <strong>same document</strong> to containers with different policies.
+        Each step below writes a browsing analytics event to the corresponding container so you can
+        compare the cost side-by-side. <span class="ix-highlight-indexed">Highlighted fields</span> in the event
+        document indicate which properties are indexed by that policy.
+    </p>
+    <p>
+        Cosmos DB has two indexing modes: <em>Consistent</em> (default, synchronous during write) and <em>None</em>
+        (disabled). Indexing policies are configured at the container level and can be updated at any time. Indexes
+        also consume storage, so intentional policies can reduce both compute and storage costs.
+    </p>
+</section>
 
+@* ══════════════════════════════════════════════════════════════════
+   Section 2 — Default
+   ══════════════════════════════════════════════════════════════════ *@
+<section class="ix-guide-section">
+    <h2 id="section-Default">Default Policy</h2>
     <p>
-        Being a schema-agnostic database, Cosmos DB will automatically <a href="https://learn.microsoft.com/en-us/azure/cosmos-db/index-overview" target="_blank">index</a> every property for each item in your containers. This can be highly beneficial from a query performance perspective while not requiring administration effort. Unlike reads in Cosmos DB which read RU cost being heavily influenced by document model, query patterns and document size, write RU costs are almost exclusively impacted by the indexing policies in place. Depending on the use case and workload scenarios, it can be beneficial to review what your indexing policies will be for your containers and their corresponding application patterns. This demonstration focuses on the high level indexing policy concepts and not a focus on types of indexes e.g. fulltext, vector, spatial, etc. Cosmos DB allows us to take a lazy approach all the way to an agressive approach with tools for guidance on how to implement. Furthermore, indexes take disk space and while storage is typically fractional to the cost of compute cost, intentional indexing policies can reduce overall costs where extra storage is not warranted. Indexing policies are configured at the container level and can be updated at any time.
-    </p>
-
-    <h3>Default</h3>
-    <p>
-        Without any configuration on a Cosmos DB container the properties of each item will be automatically indexed allowing for a hands off approach to the performance of read operations from your application without having to think through what your query patterns will look like.  This is represented in the following way for a container indexing policy configuration:
-    </p>
-    <pre class="doc-json">{
-  "indexingMode": "consistent",
-  "automatic": true,
-  "includedPaths": [
-    {
-      "path": "/*"
-    }
-  ],
-  "excludedPaths": [
-    {
-      "path": "/\"_etag\"/?"
-    }
-  ]
-}</pre>
-    <p>
-        This effectively says all paths are included in your documents and we exclude nothing. Note the <a href="https://learn.microsoft.com/en-us/azure/cosmos-db/database-transactions-optimistic-concurrency#implement-optimistic-concurrency-control-using-etag-and-http-headers" target="_blank">_etag</a> is Cosmos DB metadata for updates of a document and is excluded and should be excluded as it's not for direct query purposes.  
-    </p>
-    <p>
-        This convenience does come at a cost. Each write, specifically each property will be indexed for the document with a small RU cost per property. The more properties, the more RU's. In addition the index size will be grow adding additional storage cost. If we have application query patterns that are non deterministic of the data access this may be the best approach.
-    </p>
-
-    <h3>Implicit</h3>
-    <p>
-        In scenarios where there is a desire to reduce RU cost of writes but at the same time allow flexibility to what could be changing or variant query patterns, implicit indexing policies can give us benefit without creating new efforts to manage the index policies in what could be a changing Cosmos DB use case.
-    </p>
-    <p>
-        This strategy relies on implicitly indexing all properties that are not explicitly denied. This would be the process of maintaining the wildcard path for our included paths while specifying specific paths that we do not. In our example we determined that we will knowingly never query upon client metadata information or other application information so by excluding those paths we can reduce our costs but still allow for added data captured to be automatically indexed for what could be new access patterns, knowing that it could be reviewed and adjusted again at a later time.
-    </p>
-    <pre class="doc-json">{
-  "indexingMode": "consistent",
-  "automatic": true,
-  "includedPaths": [
-    {
-      "path": "/*"
-    }
-  ],
-  "excludedPaths": [
-    {
-      "path": "/client/*"
-    },
-    {
-      "path": "/geo/*"
-    },
-    {
-      "path": "/performance/*"
-    },
-    {
-      "path": "/context/*"
-    },
-    {
-      "path": "/\"_etag\"/?"
-    }
-  ]
-}</pre>
-    <p>
-        We are removing the client, geo, performance and context paths, including other paths underneath it. There is methods of implementing specific properties within an excluded path but in this example we do a broad exclusion for those specific paths. This is easily adjusted to add or remove paths while having a catchall for any unknown or untested properties.
+        Without any configuration, Cosmos DB automatically indexes every property in each document. This is a
+        hands-off approach that supports any query pattern — but comes at the highest write cost since every
+        property must be indexed.
     </p>
 
-    <h3>Explicit</h3>
-    <p>
-        In situations where we know exactly what properties will be used and want to get the most optimal write RU costs, we can explicitly include the properties to be indexed with a catchall for any and all properties we do not want to be indexed. Effectively an inverse of what we do in the implicit priority policy approach.
-    </p>
-    <pre class="doc-json">{
-  "indexingMode": "consistent",
-  "automatic": true,
-  "includedPaths": [
+    <div class="ix-step-row" id="steps-Default">
+        <button class="ix-step-btn @(responses["Default"] is not null ? "ix-step-done" : "ix-step-active")"
+                disabled="@(isLoading || responses["Default"] is not null)"
+                @onclick='() => WriteEventForContainer("Default")'>
+            @StepLabel("Write Event", isLoading && activeContainer == "Default", responses["Default"] is not null)
+        </button>
+    </div>
+
+    @if (errors["Default"] is not null)
     {
-      "path": "/timestamp/?"
+        <div class="error-message">@errors["Default"]</div>
     }
-  ],
-  "excludedPaths": [
-    {
-      "path": "/*"
-    },
-    {
-      "path": "/\"_etag\"/?"
-    }
-  ]
-}</pre>
+
+    @RenderPolicySection("Default", DefaultPolicyExpanded)
+</section>
+
+@* ══════════════════════════════════════════════════════════════════
+   Section 3 — Implicit
+   ══════════════════════════════════════════════════════════════════ *@
+<section class="ix-guide-section">
+    <h2 id="section-Implicit">Implicit Policy</h2>
     <p>
-        This might seem like something to implment as a default at first, there is the risk of impacting future changes without keeping the index policy as a regularly reviewed process for any application changes that introduce new data. There becomes an even closer relationship with application development and the utilized data that requires consideration when taking this policy approach.
+        This strategy maintains the wildcard include (<code>/*</code>) but explicitly excludes paths we know
+        will never be queried — <code>/client/*</code>, <code>/geo/*</code>, <code>/performance/*</code>,
+        and <code>/context/*</code>. New properties outside those paths are still automatically indexed, giving
+        flexibility for evolving query patterns.
     </p>
 
-    <h3>Modes</h3>
+    <div class="ix-step-row" id="steps-Implicit">
+        <button class="ix-step-btn @(responses["Implicit"] is not null ? "ix-step-done" : "ix-step-active")"
+                disabled="@(isLoading || responses["Implicit"] is not null)"
+                @onclick='() => WriteEventForContainer("Implicit")'>
+            @StepLabel("Write Event", isLoading && activeContainer == "Implicit", responses["Implicit"] is not null)
+        </button>
+    </div>
+
+    @if (errors["Implicit"] is not null)
+    {
+        <div class="error-message">@errors["Implicit"]</div>
+    }
+
+    @RenderPolicySection("Implicit", ImplicitPolicyExpanded)
+</section>
+
+@* ══════════════════════════════════════════════════════════════════
+   Section 4 — Explicit
+   ══════════════════════════════════════════════════════════════════ *@
+<section class="ix-guide-section">
+    <h2 id="section-Explicit">Explicit Policy</h2>
     <p>
-        Cosmos DB at a high level has two modes of indexing, <em>Consistent</em> and <em>None</em>. Consistent being both the default and often used. It is a synchronous indexing method that is during write of the document. In the unique scenario where you are using cosmos as a key value store and are not performing queries that filter on various properties i.e. direct document retrieval, indexing can simply be disabled.
+        When you know exactly which properties will be queried, you can include only those paths and exclude
+        everything else with a wildcard. Here we only index <code>/timestamp/?</code> — the minimum needed
+        for time-window queries — giving us the lowest possible write cost.
+    </p>
+
+    <div class="ix-step-row" id="steps-Explicit">
+        <button class="ix-step-btn @(responses["Explicit"] is not null ? "ix-step-done" : "ix-step-active")"
+                disabled="@(isLoading || responses["Explicit"] is not null)"
+                @onclick='() => WriteEventForContainer("Explicit")'>
+            @StepLabel("Write Event", isLoading && activeContainer == "Explicit", responses["Explicit"] is not null)
+        </button>
+    </div>
+
+    @if (errors["Explicit"] is not null)
+    {
+        <div class="error-message">@errors["Explicit"]</div>
+    }
+
+    @RenderPolicySection("Explicit", ExplicitPolicyExpanded)
+</section>
+
+@* ══════════════════════════════════════════════════════════════════
+   Section 5 — Summary
+   ══════════════════════════════════════════════════════════════════ *@
+<section id="section-Summary" class="ix-guide-section ix-guide-section-last">
+    <h2>Summary</h2>
+    <p>
+        Indexing policies directly control write costs. The Default policy gives maximum query flexibility at the
+        highest write RU cost. The Explicit policy gives the lowest write cost but limits which properties can
+        be queried efficiently. The Implicit policy provides a practical middle ground.
+    </p>
+
+    @{
+        bool allComplete = responses.Values.All(r => r is not null);
+    }
+    @if (allComplete)
+    {
+        var defaultRU = GetContainerRU("Default");
+        var implicitRU = GetContainerRU("Implicit");
+        var explicitRU = GetContainerRU("Explicit");
+        var savings = defaultRU > 0 ? ((defaultRU - explicitRU) / defaultRU * 100) : 0;
+
+        <div class="ix-summary-box">
+            <h3>Indexing Policy RU Cost Results</h3>
+            <table class="ix-summary-table">
+                <thead>
+                    <tr>
+                        <th></th>
+                        <th>Default</th>
+                        <th>Implicit</th>
+                        <th>Explicit</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td class="ix-row-label">Write RU</td>
+                        <td>@defaultRU.ToString("F2")</td>
+                        <td>@implicitRU.ToString("F2")</td>
+                        <td class="ix-summary-best-cell">@explicitRU.ToString("F2")</td>
+                    </tr>
+                    <tr>
+                        <td class="ix-row-label">× 1,000/sec</td>
+                        <td>@((defaultRU * 1000).ToString("N0"))</td>
+                        <td>@((implicitRU * 1000).ToString("N0"))</td>
+                        <td class="ix-summary-best-cell">@((explicitRU * 1000).ToString("N0"))</td>
+                    </tr>
+                </tbody>
+            </table>
+            <div class="ix-summary-savings">
+                The Explicit policy saved <strong>@savings.ToString("F0")%</strong> in write RU cost compared to Default.
+                At 1,000 writes/sec that's <strong>@(((defaultRU - explicitRU) * 1000).ToString("N0")) RU/s</strong> saved.
+            </div>
+            <div style="text-align: right;">
+                <button class="ix-start-over-btn" @onclick="StartOver">↺ Start Over</button>
+            </div>
+        </div>
+    }
+
+    <p>
+        There is no one-size-fits-all policy. Review your application's query patterns, write throughput, and
+        tolerance for index management to choose the right strategy for each container.
     </p>
     <p>
-        In this scenario, we arguably could could have disabled indexing for the type of use pattern of the data access but even with wanting basic insights into number of events in the past time windows, having the timestamp indexed allows us to interact with windows of data effectively. More importantly, this is for demonstration purposes of this concept.
+        <a href="/demos/indexing" class="ix-demo-link">Open the free-play demo →</a>
+        to write multiple events and compare cumulative costs.
     </p>
-</div>
+</section>
+
+@* ══════════════════════════════════════════════════════════════════
+   Floating Cost Comparison
+   ══════════════════════════════════════════════════════════════════ *@
+@if (HasAnyCosts())
+{
+    <div class="ix-cost-tracker">
+        <div class="ix-cost-mini"><img src="learncosmos.webp" alt="LearnCosmosDB" class="ix-cost-mini-logo" /></div>
+        <div class="ix-cost-full">
+            <div class="ix-cost-header">
+                <span class="ix-cost-title">Cost Comparison</span>
+                <button class="ix-cost-clear" title="Reset all" @onclick="StartOver">↺</button>
+            </div>
+            <table class="ix-cost-table">
+                <thead>
+                    <tr>
+                        <th>Default</th>
+                        <th>Implicit</th>
+                        <th>Explicit</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        @foreach (var c in new[] { "Default", "Implicit", "Explicit" })
+                        {
+                            var ru = GetContainerRU(c);
+                            <td class="@(ru > 0 ? "ix-cost-active" : "")">@(ru > 0 ? $"{ru:F2} RU" : "—")</td>
+                        }
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+}
+
+@* ══════════════════════════════════════════════════════════════════
+   Render Fragments
+   ══════════════════════════════════════════════════════════════════ *@
+@{
+    RenderFragment RenderPolicySection(string container, string policyJson) => __builder2 =>
+    {
+        var resp = responses[container];
+        var ru = resp?.Results.FirstOrDefault(r => r.Container == container);
+
+        <div class="ix-results-grid" id="results-@container">
+            <div class="ix-results-left">
+                <div class="ix-policy-card">
+                    <div class="ix-policy-card-header">
+                        <span>Indexing Policy</span>
+                        @if (ru is not null)
+                        {
+                            <span class="ix-ru-badge">@ru.RequestCharge.ToString("F2") RU</span>
+                        }
+                    </div>
+                    <pre class="doc-json ix-policy-pre">@policyJson</pre>
+                </div>
+                @if (resp is not null)
+                {
+                    <div class="guide-callout guide-callout-info">
+                        <strong>Info:</strong> @GetInfoText(container)
+                    </div>
+                }
+            </div>
+            <div class="ix-results-right">
+                @if (resp is not null && sharedEvent is not null)
+                {
+                    <h3>Event Document</h3>
+                    @((MarkupString)FormatHighlightedJson(sharedEvent, container))
+                }
+                else
+                {
+                    <div class="ix-placeholder">
+                        Select <strong>'Write Event'</strong> to write a document with the <strong>@container</strong> policy
+                    </div>
+                }
+            </div>
+        </div>
+    };
+}
+
+<style>
+    .ix-guide-section {
+        margin-bottom: 2.5rem;
+        padding-bottom: 2rem;
+        border-bottom: 2px solid var(--border-color);
+    }
+
+    .ix-guide-section-last {
+        border-bottom: none;
+    }
+
+    .ix-step-row {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        margin: 1rem 0;
+        scroll-margin-top: 80px;
+    }
+
+    .ix-step-btn {
+        padding: 0.5rem 1.2rem;
+        border: 2px solid var(--border-color);
+        border-radius: 6px;
+        background: var(--bg-panel);
+        cursor: pointer;
+        font-size: 0.9rem;
+        font-weight: 600;
+        transition: all 0.2s;
+    }
+
+    .ix-step-active {
+        border-color: var(--cosmos-blue);
+        color: var(--cosmos-blue);
+    }
+
+    .ix-step-active:hover:not(:disabled) {
+        background: var(--cosmos-blue);
+        color: #fff;
+    }
+
+    .ix-step-done {
+        border-color: #28a745;
+        color: #28a745;
+        opacity: 0.8;
+        cursor: default;
+        pointer-events: none;
+    }
+
+    .ix-step-reset {
+        background: none;
+        border: 1px solid var(--border-color);
+        border-radius: 50%;
+        width: 28px;
+        height: 28px;
+        font-size: 0.9rem;
+        cursor: pointer;
+        color: var(--text-secondary);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .ix-results-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 1rem;
+        margin-top: 0.5rem;
+    }
+
+    .ix-results-left {
+        display: flex;
+        flex-direction: column;
+        gap: 0.75rem;
+        min-height: 420px;
+    }
+
+    .ix-results-right {
+        overflow: hidden;
+    }
+
+    .ix-results-right pre,
+    .ix-results-right .ix-json-highlighted {
+        max-height: 500px;
+        overflow-y: auto;
+        overflow-x: hidden;
+        white-space: pre-wrap;
+        word-wrap: break-word;
+    }
+
+    .ix-placeholder {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 200px;
+        background: var(--bg-panel);
+        border: 2px dashed var(--border-color);
+        border-radius: 8px;
+        padding: 2rem;
+        text-align: center;
+        color: var(--text-secondary);
+        font-size: 0.95rem;
+    }
+
+    .ix-policy-card {
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        overflow: hidden;
+    }
+
+    .ix-policy-card-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 0.5rem 0.75rem;
+        background: var(--bg-panel-alt);
+        font-weight: 600;
+        font-size: 0.85rem;
+        border-bottom: 1px solid var(--border-color);
+    }
+
+    .ix-policy-pre {
+        margin: 0;
+        border-radius: 0;
+        font-size: 0.78rem;
+    }
+
+    .ix-ru-badge {
+        background: var(--cosmos-blue);
+        color: #fff;
+        padding: 0.15rem 0.5rem;
+        border-radius: 12px;
+        font-size: 0.75rem;
+        font-weight: 700;
+    }
+
+    .guide-callout {
+        background: var(--bg-panel-alt);
+        border-left: 4px solid var(--cosmos-blue);
+        padding: 0.75rem 1rem;
+        border-radius: 0 6px 6px 0;
+        font-size: 0.9rem;
+    }
+
+    /* Highlighted JSON */
+    .ix-json-highlighted {
+        background: var(--bg-panel);
+        border: 1px solid var(--border-color);
+        border-radius: 6px;
+        padding: 0.75rem 1rem;
+        font-family: var(--font-mono, monospace);
+        font-size: 0.78rem;
+        line-height: 1.5;
+        overflow: auto;
+        max-height: 500px;
+        white-space: pre-wrap;
+        word-wrap: break-word;
+    }
+
+    .ix-highlight-indexed {
+        background: rgba(40, 167, 69, 0.15);
+        border-left: 3px solid #28a745;
+        padding-left: 4px;
+        margin-left: -7px;
+    }
+
+    .ix-highlight-excluded {
+        opacity: 0.45;
+    }
+
+    /* Summary */
+    .ix-summary-box {
+        background: var(--bg-panel);
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        padding: 1.25rem 1.5rem;
+        margin: 1.5rem 0;
+    }
+
+    .ix-summary-box h3 {
+        margin-top: 0;
+        margin-bottom: 0.75rem;
+        color: var(--cosmos-blue);
+    }
+
+    .ix-summary-table {
+        border-collapse: collapse;
+        margin: 1rem auto;
+        font-size: 0.85rem;
+        width: 50%;
+    }
+
+    .ix-summary-table th,
+    .ix-summary-table td {
+        padding: 0.4rem 1.25rem;
+        text-align: center;
+        border-bottom: 1px solid var(--border-color);
+    }
+
+    .ix-summary-table th {
+        font-weight: 600;
+        color: var(--text-secondary);
+    }
+
+    .ix-row-label {
+        text-align: left !important;
+        font-weight: 600;
+        color: var(--text-secondary);
+        font-size: 0.8rem;
+    }
+
+    .ix-summary-best-cell {
+        background: rgba(0, 120, 212, 0.08);
+        font-weight: 700;
+    }
+
+    .ix-summary-savings {
+        background: rgba(0, 120, 212, 0.06);
+        border-left: 4px solid var(--cosmos-blue);
+        padding: 0.75rem 1rem;
+        border-radius: 0 6px 6px 0;
+        margin-top: 1rem;
+        line-height: 1.6;
+    }
+
+    .ix-start-over-btn {
+        background: none;
+        border: 1px solid var(--border-color);
+        border-radius: 4px;
+        padding: 0.3rem 0.75rem;
+        font-size: 0.8rem;
+        color: var(--text-secondary);
+        cursor: pointer;
+        margin-top: 0.75rem;
+        opacity: 0.6;
+        transition: opacity 0.2s;
+    }
+
+    .ix-start-over-btn:hover {
+        opacity: 1;
+        border-color: var(--cosmos-blue);
+        color: var(--cosmos-blue);
+    }
+
+    .ix-demo-link {
+        display: inline-block;
+        margin-top: 0.5rem;
+        padding: 0.5rem 1.2rem;
+        background: var(--cosmos-blue);
+        color: #fff;
+        border-radius: 6px;
+        text-decoration: none;
+        font-weight: 600;
+        font-size: 0.9rem;
+    }
+
+    .ix-demo-link:hover {
+        background: var(--cosmos-blue-hover);
+    }
+
+    /* Floating Cost Tracker */
+    .ix-cost-tracker {
+        position: fixed;
+        bottom: 1.5rem;
+        right: 1.5rem;
+        background: var(--bg-panel);
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        padding: 0.75rem 1rem;
+        font-size: 0.78rem;
+        box-shadow: var(--shadow-md);
+        z-index: 100;
+        transition: all 0.3s ease;
+    }
+
+    .ix-cost-tracker .ix-cost-mini {
+        display: none;
+    }
+
+    .ix-cost-tracker.ix-cost-minimized .ix-cost-mini {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .ix-cost-tracker.ix-cost-minimized .ix-cost-full {
+        display: none;
+    }
+
+    .ix-cost-tracker.ix-cost-minimized {
+        padding: 0.4rem;
+        border-radius: 10px;
+    }
+
+    .ix-cost-mini-logo {
+        width: 32px;
+        height: 32px;
+        border-radius: 6px;
+    }
+
+    .ix-cost-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 0.5rem;
+    }
+
+    .ix-cost-title {
+        font-weight: 700;
+        font-size: 0.82rem;
+    }
+
+    .ix-cost-clear {
+        background: none;
+        border: none;
+        cursor: pointer;
+        font-size: 1rem;
+        color: var(--text-secondary);
+        padding: 0;
+    }
+
+    .ix-cost-table {
+        border-collapse: collapse;
+        width: 100%;
+        font-size: 0.78rem;
+    }
+
+    .ix-cost-table th,
+    .ix-cost-table td {
+        padding: 0.25rem 0.5rem;
+        text-align: center;
+        border-bottom: 1px solid var(--border-color);
+    }
+
+    .ix-cost-table th {
+        font-weight: 600;
+        font-size: 0.72rem;
+        color: var(--text-secondary);
+    }
+
+    .ix-cost-active {
+        font-weight: 600;
+    }
+
+    .ix-guide-section h2[id^="section-"] {
+        scroll-margin-top: 80px;
+    }
+</style>
 
 @code {
     private static readonly string[] Actions =
@@ -186,90 +626,250 @@
 
     private static readonly Random Rng = new();
 
-    private const string DefaultPolicy = @"{
-  ""indexingMode"": ""consistent"",
-  ""automatic"": true,
-  ""includedPaths"": [
-    {
-      ""path"": ""/*""
-    }
-  ],
-  ""excludedPaths"": []
-}";
+    private static readonly string DefaultPolicyExpanded = "{\n  \"indexingMode\": \"consistent\",\n  \"automatic\": true,\n  \"includedPaths\": [\n    {\n      \"path\": \"/*\"\n    }\n  ],\n  \"excludedPaths\": [\n    {\n      \"path\": \"/\\\"_etag\\\"/?\"\n    }\n  ]\n}";
 
-    private const string ImplicitPolicy = @"{
-  ""indexingMode"": ""consistent"",
-  ""automatic"": true,
-  ""includedPaths"": [
-    {
-      ""path"": ""/*""
-    }
-  ],
-  ""excludedPaths"": [
-    {
-      ""path"": ""/client/*""
-    },
-    {
-      ""path"": ""/geo/*""
-    },
-    {
-      ""path"": ""/performance/*""
-    },
-    {
-      ""path"": ""/context/*""
-    }
-  ]
-}";
+    private static readonly string ImplicitPolicyExpanded = "{\n  \"indexingMode\": \"consistent\",\n  \"automatic\": true,\n  \"includedPaths\": [\n    {\n      \"path\": \"/*\"\n    }\n  ],\n  \"excludedPaths\": [\n    {\n      \"path\": \"/client/*\"\n    },\n    {\n      \"path\": \"/geo/*\"\n    },\n    {\n      \"path\": \"/performance/*\"\n    },\n    {\n      \"path\": \"/context/*\"\n    },\n    {\n      \"path\": \"/\\\"_etag\\\"/?\"\n    }\n  ]\n}";
 
-    private const string ExplicitPolicy = @"{
-  ""indexingMode"": ""consistent"",
-  ""automatic"": true,
-  ""includedPaths"": [
-    {
-      ""path"": ""/timestamp/?""
-    }
-  ],
-  ""excludedPaths"": [
-    {
-      ""path"": ""/*""
-    }
-  ]
-}";
+    private static readonly string ExplicitPolicyExpanded = "{\n  \"indexingMode\": \"consistent\",\n  \"automatic\": true,\n  \"includedPaths\": [\n    {\n      \"path\": \"/timestamp/?\"\n    }\n  ],\n  \"excludedPaths\": [\n    {\n      \"path\": \"/*\"\n    },\n    {\n      \"path\": \"/\\\"_etag\\\"/?\"\n    }\n  ]\n}";
 
     private bool isLoading;
-    private bool showHelp;
-    private string? errorMessage;
-    private IndexingResponse? lastResponse;
+    private bool observerSetUp;
+    private string? activeContainer;
+    private readonly Dictionary<string, string?> errors = new()
+    {
+        ["Default"] = null, ["Implicit"] = null, ["Explicit"] = null
+    };
+    private readonly Dictionary<string, IndexingResponse?> responses = new()
+    {
+        ["Default"] = null, ["Implicit"] = null, ["Explicit"] = null
+    };
+    private BrowsingEvent? sharedEvent;
 
-    private async Task WriteEvent()
+    // Indexed top-level property names per policy
+    private static readonly HashSet<string> ExcludedImplicit = new(StringComparer.OrdinalIgnoreCase)
+        { "client", "geo", "performance", "context" };
+    private static readonly HashSet<string> IncludedExplicit = new(StringComparer.OrdinalIgnoreCase)
+        { "timestamp" };
+
+    protected override void OnInitialized()
+    {
+        Benchmark.OnChange += StateHasChanged;
+        Benchmark.Clear();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!observerSetUp && HasAnyCosts())
+        {
+            observerSetUp = true;
+            await JS.InvokeVoidAsync("eval", @"
+                (function() {
+                    if (window.__ixCostObserver) window.__ixCostObserver.disconnect();
+                    var el = document.getElementById('section-Summary');
+                    if (!el) return;
+                    window.__ixCostObserver = new IntersectionObserver(function(entries) {
+                        var tracker = document.querySelector('.ix-cost-tracker');
+                        if (!tracker) return;
+                        entries.forEach(function(e) {
+                            if (e.isIntersecting) tracker.classList.add('ix-cost-minimized');
+                            else tracker.classList.remove('ix-cost-minimized');
+                        });
+                    }, { threshold: 0.1 });
+                    window.__ixCostObserver.observe(el);
+                })()
+            ");
+        }
+    }
+
+    private async Task WriteEventForContainer(string container)
     {
         isLoading = true;
-        errorMessage = null;
+        activeContainer = container;
+        errors[container] = null;
 
         try
         {
             var action = Actions[Rng.Next(Actions.Length)];
-            lastResponse = await Api.SimulateEventAsync(action);
+            var resp = await Api.SimulateEventAsync(action);
 
-            if (lastResponse is null)
-                errorMessage = "Failed to write event. Is the API running?";
+            if (resp is null)
+            {
+                errors[container] = "Failed to write event. Is the API running?";
+                return;
+            }
+
+            responses[container] = resp;
+            sharedEvent ??= resp.Event;
+
+            var result = resp.Results.FirstOrDefault(r => r.Container == container);
+            if (result is not null)
+                Benchmark.RecordWrite(container, result.RequestCharge);
+
+            await ScrollToResults(container);
         }
         catch (Exception ex)
         {
-            errorMessage = $"Error: {ex.Message}";
+            errors[container] = $"Error: {ex.Message}";
         }
         finally
         {
             isLoading = false;
+            activeContainer = null;
         }
     }
 
-    private static string FormatEventJson(BrowsingEvent evt)
+    private void ResetContainer(string container)
     {
-        return JsonSerializer.Serialize(evt, new JsonSerializerOptions
+        responses[container] = null;
+        errors[container] = null;
+    }
+
+    private async Task StartOver()
+    {
+        foreach (var key in responses.Keys.ToList())
+        {
+            responses[key] = null;
+            errors[key] = null;
+        }
+        sharedEvent = null;
+        Benchmark.Clear();
+        observerSetUp = false;
+        await ScrollToSection("Default");
+    }
+
+    private bool HasAnyCosts() =>
+        Benchmark.ContainerNames.Any(c => Benchmark.GetTotalRU(c) > 0);
+
+    private double GetContainerRU(string container)
+    {
+        var resp = responses[container];
+        return resp?.Results.FirstOrDefault(r => r.Container == container)?.RequestCharge ?? 0;
+    }
+
+    private async Task ScrollToResults(string container)
+    {
+        await Task.Yield();
+        await JS.InvokeVoidAsync("eval", $"document.getElementById('steps-{container}')?.scrollIntoView({{behavior:'smooth',block:'start'}})");
+    }
+
+    private async Task ScrollToSection(string container)
+    {
+        await JS.InvokeVoidAsync("eval", $"document.getElementById('section-{container}')?.scrollIntoView({{behavior:'smooth',block:'start'}})");
+    }
+
+    private static string StepLabel(string text, bool loading, bool done)
+    {
+        if (loading) return "Working…";
+        if (done) return $"✓ {text}";
+        return text;
+    }
+
+    private static string GetInfoText(string container) => container switch
+    {
+        "Default" => "With all paths indexed, every property in the document contributes to the RU cost. This is the most expensive write but guarantees any future query pattern is supported without policy changes.",
+        "Implicit" => "By excluding the client, geo, performance, and context paths, fewer properties are indexed on write — reducing the RU cost while still supporting flexible queries on other fields.",
+        "Explicit" => "Only /timestamp is indexed — the write cost is minimal. This is ideal for high-throughput ingestion where you know the exact query patterns, but requires careful management as application queries evolve.",
+        _ => ""
+    };
+
+    private static string FormatHighlightedJson(BrowsingEvent evt, string container)
+    {
+        var json = JsonSerializer.Serialize(evt, new JsonSerializerOptions
         {
             WriteIndented = true,
             PropertyNamingPolicy = JsonNamingPolicy.CamelCase
         });
+
+        var lines = json.Split('\n');
+        var sb = new System.Text.StringBuilder();
+        sb.Append("<pre class=\"ix-json-highlighted\">");
+
+        string? currentTopKey = null;
+        int braceDepth = 0;
+        bool inExcludedBlock = false;
+
+        foreach (var rawLine in lines)
+        {
+            var trimmed = rawLine.TrimStart();
+
+            // Track brace depth for nested objects
+            if (currentTopKey is not null)
+            {
+                foreach (var ch in trimmed)
+                {
+                    if (ch == '{' || ch == '[') braceDepth++;
+                    else if (ch == '}' || ch == ']') braceDepth--;
+                }
+                if (braceDepth <= 0)
+                {
+                    currentTopKey = null;
+                    braceDepth = 0;
+                }
+            }
+
+            // Detect top-level property key
+            if (currentTopKey is null && trimmed.StartsWith("\""))
+            {
+                var keyEnd = trimmed.IndexOf('"', 1);
+                if (keyEnd > 1)
+                {
+                    var key = trimmed[1..keyEnd];
+                    bool isIndexed = IsPropertyIndexed(key, container);
+
+                    // Check if this starts a nested block
+                    if (trimmed.Contains('{') || trimmed.Contains('['))
+                    {
+                        currentTopKey = key;
+                        braceDepth = 0;
+                        foreach (var ch in trimmed)
+                        {
+                            if (ch == '{' || ch == '[') braceDepth++;
+                            else if (ch == '}' || ch == ']') braceDepth--;
+                        }
+                        inExcludedBlock = !isIndexed;
+                    }
+                    else
+                    {
+                        inExcludedBlock = !isIndexed;
+                    }
+
+                    var cssClass = isIndexed ? "ix-highlight-indexed" : "ix-highlight-excluded";
+                    sb.Append($"<span class=\"{cssClass}\">");
+                    sb.Append(System.Net.WebUtility.HtmlEncode(rawLine));
+                    sb.AppendLine("</span>");
+                    if (currentTopKey is null) inExcludedBlock = false;
+                    continue;
+                }
+            }
+
+            if (currentTopKey is not null)
+            {
+                var cssClass = inExcludedBlock ? "ix-highlight-excluded" : "ix-highlight-indexed";
+                sb.Append($"<span class=\"{cssClass}\">");
+                sb.Append(System.Net.WebUtility.HtmlEncode(rawLine));
+                sb.AppendLine("</span>");
+            }
+            else
+            {
+                sb.AppendLine(System.Net.WebUtility.HtmlEncode(rawLine));
+            }
+        }
+
+        sb.Append("</pre>");
+        return sb.ToString();
+    }
+
+    private static bool IsPropertyIndexed(string propertyName, string container) => container switch
+    {
+        "Default" => true,
+        "Implicit" => !ExcludedImplicit.Contains(propertyName),
+        "Explicit" => IncludedExplicit.Contains(propertyName),
+        _ => true
+    };
+
+    public void Dispose()
+    {
+        Benchmark.OnChange -= StateHasChanged;
+        _ = JS.InvokeVoidAsync("eval", "if(window.__ixCostObserver){window.__ixCostObserver.disconnect();window.__ixCostObserver=null;}");
     }
 }
