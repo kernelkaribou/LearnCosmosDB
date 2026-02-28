@@ -1,7 +1,9 @@
 @page "/modules/datamodeling"
 @using System.Text.Json
+@using Microsoft.JSInterop
 @inject DataModelingApiClient Api
 @inject BenchmarkService Benchmark
+@inject Microsoft.JSInterop.IJSRuntime JS
 @implements IDisposable
 
 <PageTitle>Data Modeling - Learn Cosmos DB</PageTitle>
@@ -42,31 +44,21 @@
         query cost × 1,000.
     </p>
 
-    @if (hints is not null)
-    {
-        <div class="guide-callout">
-            <strong>Your search values for this session:</strong>
-            Movie: <strong>@hints.MovieTitle</strong> &nbsp;|&nbsp; Director: <strong>@hints.TopDirectorName</strong>
-            <br/><span style="font-size: 0.8rem; opacity: 0.7;">Refresh the page to get new random values.</span>
-        </div>
-    }
-    else
-    {
-        <div class="guide-callout">Loading search values…</div>
-    }
 </section>
 
 @* ══════════════════════════════════════════════════════════════════
    Section 2 — Single Model
    ══════════════════════════════════════════════════════════════════ *@
 <section class="guide-section">
-    <h2>Starting Model — "Single"</h2>
+    <h2 id="section-Single">Starting Model — "Single"</h2>
     <p>
         To try and balance our partitions, we went with a
         <a href="https://docs.microsoft.com/en-us/azure/cosmos-db/partitioning-overview#choose-partitionkey" target="_blank">partitioning</a>
         method of using the movie title as our partition key. Each document in our collection is a single movie.
     </p>
-    <pre class="doc-json">{
+    <div class="schema-example">
+        <div class="schema-example-label">Example Single Movie Document</div>
+        <pre class="doc-json">{
     "id": "1234567890",
     "type": "movie",
     "title": "single doc movie",
@@ -105,6 +97,7 @@
         }
     ]
 }</pre>
+    </div>
     <p>
         Since a user does not know the unique ID of a movie, searching on a movie title allows a partition-based query
         with lower RU cost. However, searching for a director or actor is embedded information — it requires a cross-partition
@@ -134,14 +127,14 @@
                 <code>ARRAY_CONTAINS</code> cross-partition query — significantly more expensive than the movie search.
             </div>
         }
-        @if (singleActive.Label == "Movie Select (Point Read)")
+        @if (singleActive.Label == "Select Movie (Point Read)")
         {
             <div class="guide-callout guide-callout-info">
                 <strong>Info:</strong> Since we know the exact document ID and partition key from the previous results,
                 this is a point read — the cheapest possible operation at ~1 RU.
             </div>
         }
-        @RenderResultsPanel(singleActive.Response, singleActive.Label)
+        @RenderResultsPanel(singleActive.Response, singleActive.Label, singleActive.Label == "Select Movie (Point Read)", "results-Single")
     }
 </section>
 
@@ -149,13 +142,15 @@
    Section 3 — Embedded Model
    ══════════════════════════════════════════════════════════════════ *@
 <section class="guide-section">
-    <h2>Embedded Model</h2>
+    <h2 id="section-Embedded">Embedded Model</h2>
     <p>
         We improved searching by creating a collocated document for each Actor and Director for a given movie. The data is
         embedded just like the movie document with some minor changes to properties. This simplified application logic and
         improved user experience — <strong>no need to specify a search type</strong>. The movie documents remain unchanged.
     </p>
-    <pre class="doc-json">{
+    <div class="schema-example">
+        <div class="schema-example-label">Example Embedded Person Document</div>
+        <pre class="doc-json">{
     "id": "mov12345act6789",
     "type": "person",
     "title": "best actor",
@@ -196,6 +191,7 @@
         }
     ]
 }</pre>
+    </div>
     <p>
         Because we query on a partition value (the person's name), the director search cost is reduced significantly.
         However, these person documents duplicate the full movie data, increasing storage from ~500MB to ~3GB.
@@ -222,14 +218,14 @@
                 on the director's name. Compare this RU cost to the Single model's director search above.
             </div>
         }
-        @if (embeddedActive.Label == "Movie Select (Point Read)")
+        @if (embeddedActive.Label == "Select Movie (Point Read)")
         {
             <div class="guide-callout guide-callout-info">
                 <strong>Info:</strong> Point read on the movie document using ID and partition key — same ~1 RU cost
                 as the Single model.
             </div>
         }
-        @RenderResultsPanel(embeddedActive.Response, embeddedActive.Label)
+        @RenderResultsPanel(embeddedActive.Response, embeddedActive.Label, embeddedActive.Label == "Select Movie (Point Read)", "results-Embedded")
     }
 </section>
 
@@ -237,12 +233,14 @@
    Section 4 — Reference Model
    ══════════════════════════════════════════════════════════════════ *@
 <section class="guide-section">
-    <h2>Reference Model</h2>
+    <h2 id="section-Reference">Reference Model</h2>
     <p>
         To reduce RU cost further, we used the same collocation method but changed the person documents to only contain
         basic reference data for the movie. This greatly reduced document size and made them more consistent.
     </p>
-    <pre class="doc-json">{
+    <div class="schema-example">
+        <div class="schema-example-label">Example Reference Person Document</div>
+        <pre class="doc-json">{
     "id": "mov12345act6789",
     "type": "person",
     "title": "best actor",
@@ -254,6 +252,7 @@
     "year": 2001,
     "posterUrl": "https://example.com/poster.jpg"
 }</pre>
+    </div>
     <p>
         We lose embedded details like genres and reviews, but those were not used during browsing. The smaller
         documents result in slightly lower RU costs.
@@ -279,14 +278,14 @@
                 The smaller document size results in a slightly lower RU cost compared to the Embedded model.
             </div>
         }
-        @if (referenceActive.Label == "Movie Select (Point Read)")
+        @if (referenceActive.Label == "Select Movie (Point Read)")
         {
             <div class="guide-callout guide-callout-info">
                 <strong>Info:</strong> Point read retrieves the full movie document — same cost as other models since
                 the movie documents are identical across all four containers.
             </div>
         }
-        @RenderResultsPanel(referenceActive.Response, referenceActive.Label)
+        @RenderResultsPanel(referenceActive.Response, referenceActive.Label, referenceActive.Label == "Select Movie (Point Read)", "results-Reference")
     }
 </section>
 
@@ -294,14 +293,16 @@
    Section 5 — Hybrid Model
    ══════════════════════════════════════════════════════════════════ *@
 <section class="guide-section">
-    <h2>Hybrid Model</h2>
+    <h2 id="section-Hybrid">Hybrid Model</h2>
     <p>
         By combining the partition-based query approach from the Embedded model with the smaller document size from
         the Reference model, we designed a hybrid document. Each person has a <strong>single document</strong> containing
         a <code>roles</code> array with reference data for each movie. This can be obtained with a partition query or
         even a Point Read.
     </p>
-    <pre class="doc-json">{
+    <div class="schema-example">
+        <div class="schema-example-label">Example Hybrid Person Document</div>
+        <pre class="doc-json">{
     "id": "act123",
     "title": "best actor",
     "originalTitle": "Best Actor",
@@ -327,6 +328,7 @@
         }
     ]
 }</pre>
+    </div>
     <p>
         The director search cost drops to nearly match the movie search cost. Once a user starts browsing by
         clicking results, subsequent queries can be Point Reads — roughly 1-2 RU each.
@@ -352,27 +354,83 @@
                 document contains all movie references in a <code>roles</code> array. Compare the costs in the table below.
             </div>
         }
-        @if (hybridActive.Label == "Movie Select (Point Read)")
+        @if (hybridActive.Label == "Select Movie (Point Read)")
         {
             <div class="guide-callout guide-callout-info">
                 <strong>Info:</strong> Point read on the selected movie. With the Hybrid model, once a user starts
                 browsing by clicking results, every subsequent query can be a Point Read at ~1 RU each.
             </div>
         }
-        @RenderResultsPanel(hybridActive.Response, hybridActive.Label)
+        @RenderResultsPanel(hybridActive.Response, hybridActive.Label, hybridActive.Label == "Select Movie (Point Read)", "results-Hybrid")
     }
 </section>
 
 @* ══════════════════════════════════════════════════════════════════
    Section 6 — Summary
    ══════════════════════════════════════════════════════════════════ *@
-<section class="guide-section guide-section-last">
+<section id="section-Summary" class="guide-section guide-section-last">
     <h2>Summary</h2>
     <p>
         By rethinking our data model and taking advantage of the schema-less design of Cosmos DB, we were able to take the
         same data and even the same partition key and achieve a vastly improved performance experience by modeling the data
         to fit the use case.
     </p>
+
+    @{
+        bool allComplete = sections.Values.All(s => s.Step == SectionStep.DetailDone);
+    }
+    @if (allComplete)
+    {
+        var singleTotal = Benchmark.GetModelTotal("Single");
+        var embeddedTotal = Benchmark.GetModelTotal("Embedded");
+        var referenceTotal = Benchmark.GetModelTotal("Reference");
+        var hybridTotal = Benchmark.GetModelTotal("Hybrid");
+        var worstTotal = singleTotal;
+        var bestTotal = new[] { singleTotal, embeddedTotal, referenceTotal, hybridTotal }.Min();
+        var bestModel = hybridTotal == bestTotal ? "Hybrid" : referenceTotal == bestTotal ? "Reference" : embeddedTotal == bestTotal ? "Embedded" : "Single";
+        var savings = worstTotal > 0 ? ((worstTotal - bestTotal) / worstTotal * 100) : 0;
+        var multiplier = bestTotal > 0 ? (worstTotal / bestTotal) : 0;
+
+        <div class="summary-cost-analysis">
+            <h3>Your Results</h3>
+            <p>
+                Based on searching for movie <strong>"@hints?.MovieTitle"</strong> and director <strong>"@hints?.TopDirectorName"</strong>,
+                here is how each model compares:
+            </p>
+            <table class="cost-table summary-cost-table">
+                <thead>
+                    <tr>
+                        <th>Model</th>
+                        <th>Total RU (1 Request)</th>
+                        <th>RU × 1,000 Requests/sec</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var model in Benchmark.ModelNames)
+                    {
+                        var total = Benchmark.GetModelTotal(model);
+                        var isBest = model == bestModel;
+                        <tr class="@(isBest ? "summary-best-row" : "")">
+                            <td>@model</td>
+                            <td>@total.ToString("F2") RU</td>
+                            <td>@((total * 1000).ToString("N0")) RU/s</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+            <div class="summary-savings-callout">
+                <strong>@bestModel</strong> saved <strong>@savings.ToString("F0")%</strong> in RU cost compared to the Single model
+                — a <strong>@multiplier.ToString("F1")×</strong> improvement.
+                At 1,000 requests/sec that's <strong>@((worstTotal * 1000).ToString("N0")) RU/s</strong> vs
+                <strong>@((bestTotal * 1000).ToString("N0")) RU/s</strong>, saving
+                <strong>@(((worstTotal - bestTotal) * 1000).ToString("N0")) RU/s</strong>.
+            </div>
+            <div style="text-align: right;">
+                <button class="start-over-btn" @onclick="StartOver">↺ Start Over</button>
+            </div>
+        </div>
+    }
+
     <p>
         Given the scenario of 1,000 concurrent users performing these actions, the Hybrid model achieves over <strong>2.5×</strong>
         performance improvement — resulting in over <strong>60%</strong> service cost reduction while also providing an
@@ -398,10 +456,17 @@
 @if (HasAnyCosts())
 {
     <div class="guide-cost-tracker">
+        <div class="cost-minimized-icon"><img src="learncosmos.webp" alt="LearnCosmosDB" class="cost-mini-logo" /></div>
         <div class="cost-tracker-header">
             <span class="cost-tracker-title">Cost Comparison</span>
             <button class="benchmark-clear" title="Reset all costs" @onclick="ResetAll">↺</button>
         </div>
+        @if (hints is not null)
+        {
+            <div class="cost-tracker-search-values">
+                Movie: <strong>@hints.MovieTitle</strong> &nbsp;|&nbsp; Director: <strong>@hints.TopDirectorName</strong>
+            </div>
+        }
         <table class="cost-table">
             <thead>
                 <tr>
@@ -419,7 +484,7 @@
                     @if (Benchmark.GetModelTotal(model) > 0)
                     {
                         <tr>
-                            <td>@model</td>
+                            <td><a class="cost-model-link" href="javascript:void(0)" @onclick='() => ScrollToSection(model)'>@model</a></td>
                             @foreach (var action in Benchmark.ActionNames)
                             {
                                 var cost = Benchmark.GetCost(model, action);
@@ -447,7 +512,7 @@
         var isDone = sec.Step == SectionStep.DetailDone;
         var isWorking = sec.IsLoading;
 
-        <div class="guide-step-row">
+        <div class="guide-step-row" id="steps-@model">
             <button class="guide-step-btn @(sec.Step > SectionStep.Ready ? "guide-step-done" : "") @(isMovie ? "guide-step-active" : "")"
                     disabled="@(!isMovie || isWorking)"
                     @onclick="() => DoMovieSearch(model)">
@@ -463,7 +528,7 @@
             <button class="guide-step-btn @(sec.Step > SectionStep.DirectorDone ? "guide-step-done" : "") @(isDetail ? "guide-step-active" : "")"
                     disabled="@(!isDetail || isWorking)"
                     @onclick="() => DoDetailClick(model)">
-                @StepLabel("3. Click Movie", isWorking && isDetail, sec.Step > SectionStep.DirectorDone)
+                @StepLabel("3. Select Movie", isWorking && isDetail, sec.Step > SectionStep.DirectorDone)
             </button>
 
             @if (isDone || sec.Step > SectionStep.Ready)
@@ -478,9 +543,9 @@
         }
     };
 
-    RenderFragment RenderResultsPanel(DataModelingResponse resp, string label) => __builder2 =>
+    RenderFragment RenderResultsPanel(DataModelingResponse resp, string label, bool isDetail = false, string? anchorId = null) => __builder2 =>
     {
-        <div class="guide-results-label">@label</div>
+        <div class="guide-results-label" id="@anchorId">@label</div>
         <div class="results-panel">
             <div class="panel panel-left">
                 <div class="diag-summary">
@@ -536,6 +601,150 @@
             </div>
 
             <div class="panel-right">
+                @if (isDetail && resp.MediaResults.Count > 0)
+                {
+                    @* ── Movie Detail View ── *@
+                    var m = resp.MediaResults[0];
+                    var detailTitle = GetProp(m, "originalTitle") ?? GetProp(m, "title") ?? "";
+                    var detailPoster = GetProp(m, "posterUrl");
+                    var detailYear = GetProp(m, "year") ?? "";
+                    var detailRating = GetProp(m, "mpaaRating") ?? "";
+                    var detailDesc = GetProp(m, "description") ?? GetProp(m, "tagline") ?? "";
+                    var detailTagline = GetProp(m, "tagline") ?? "";
+                    var detailGenres = GetArray(m, "genres");
+                    var detailActors = GetPeople(m, "actors");
+                    var detailDirectors = GetPeople(m, "directors");
+                    var detailReviews = GetReviews(m);
+
+                    <div class="panel movie-detail">
+                        <div class="detail-header">
+                            @if (!string.IsNullOrEmpty(detailPoster))
+                            {
+                                <img class="detail-poster" src="@detailPoster" alt="@detailTitle" />
+                            }
+                            else
+                            {
+                                <div class="detail-poster-placeholder">🎬</div>
+                            }
+                            <div class="detail-info">
+                                <h2 class="detail-title">@detailTitle</h2>
+                                <div class="detail-meta">
+                                    <div class="detail-meta-left">
+                                        @if (!string.IsNullOrEmpty(detailYear)) { <span class="detail-badge">@detailYear</span> }
+                                        @if (!string.IsNullOrEmpty(detailRating)) { <span class="detail-badge rating">@detailRating</span> }
+                                        @foreach (var g in detailGenres)
+                                        {
+                                            <span class="detail-badge genre">@g</span>
+                                        }
+                                    </div>
+                                    @if (detailReviews.Count > 0)
+                                    {
+                                        var scores = detailReviews
+                                            .Where(r => double.TryParse(r.Score, out _))
+                                            .Select(r => double.Parse(r.Score))
+                                            .ToList();
+                                        @if (scores.Count > 0)
+                                        {
+                                            var avgScore = scores.Average();
+                                            var rating10 = avgScore > 10 ? avgScore / 10.0 : avgScore;
+                                            <span class="detail-badge cosmos-rating" title="Average critic score">
+                                                <svg class="planet-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                                    <circle cx="12" cy="12" r="6"/>
+                                                    <ellipse cx="12" cy="12" rx="11" ry="4" transform="rotate(-20 12 12)"/>
+                                                </svg>
+                                                @rating10.ToString("F1") / 10
+                                            </span>
+                                        }
+                                    }
+                                </div>
+                                @if (!string.IsNullOrEmpty(detailTagline))
+                                {
+                                    <p class="detail-tagline">"@detailTagline"</p>
+                                }
+                                <div class="detail-description">
+                                    <p>@detailDesc</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        @if (detailDirectors.Count > 0)
+                        {
+                            <div class="detail-section">
+                                <h3>Directors</h3>
+                                <div class="detail-people">
+                                    @foreach (var (name, originalName, imageUrl) in detailDirectors)
+                                    {
+                                        <span class="person-card-link">
+                                            @if (!string.IsNullOrEmpty(imageUrl))
+                                            {
+                                                <img class="person-avatar" src="@imageUrl" alt="@originalName"
+                                                     onerror="this.style.display='none';this.nextElementSibling.style.display='flex';" />
+                                                <span class="person-avatar-placeholder" style="display:none;">
+                                                    <svg viewBox="0 0 64 64" class="silhouette-icon"><circle cx="32" cy="24" r="12"/><ellipse cx="32" cy="56" rx="20" ry="14"/></svg>
+                                                </span>
+                                            }
+                                            else
+                                            {
+                                                <span class="person-avatar-placeholder">
+                                                    <svg viewBox="0 0 64 64" class="silhouette-icon"><circle cx="32" cy="24" r="12"/><ellipse cx="32" cy="56" rx="20" ry="14"/></svg>
+                                                </span>
+                                            }
+                                            <span class="person-name">@originalName</span>
+                                        </span>
+                                    }
+                                </div>
+                            </div>
+                        }
+
+                        @if (detailActors.Count > 0)
+                        {
+                            <div class="detail-section">
+                                <h3>Cast</h3>
+                                <div class="detail-people">
+                                    @foreach (var (name, originalName, imageUrl) in detailActors)
+                                    {
+                                        <span class="person-card-link">
+                                            @if (!string.IsNullOrEmpty(imageUrl))
+                                            {
+                                                <img class="person-avatar" src="@imageUrl" alt="@originalName"
+                                                     onerror="this.style.display='none';this.nextElementSibling.style.display='flex';" />
+                                                <span class="person-avatar-placeholder" style="display:none;">
+                                                    <svg viewBox="0 0 64 64" class="silhouette-icon"><circle cx="32" cy="24" r="12"/><ellipse cx="32" cy="56" rx="20" ry="14"/></svg>
+                                                </span>
+                                            }
+                                            else
+                                            {
+                                                <span class="person-avatar-placeholder">
+                                                    <svg viewBox="0 0 64 64" class="silhouette-icon"><circle cx="32" cy="24" r="12"/><ellipse cx="32" cy="56" rx="20" ry="14"/></svg>
+                                                </span>
+                                            }
+                                            <span class="person-name">@originalName</span>
+                                        </span>
+                                    }
+                                </div>
+                            </div>
+                        }
+
+                        @if (detailReviews.Count > 0)
+                        {
+                            <div class="detail-section">
+                                <h3>Critic Reviews</h3>
+                                @foreach (var (review, score) in detailReviews)
+                                {
+                                    <div class="review-item">
+                                        @if (!string.IsNullOrEmpty(score))
+                                        {
+                                            <span class="review-score">@score</span>
+                                        }
+                                        <span class="review-text">@review</span>
+                                    </div>
+                                }
+                            </div>
+                        }
+                    </div>
+                }
+                else
+                {
                 <div class="panel">
                     <h3>Results (@resp.MediaResults.Count)</h3>
                     <div class="poster-grid">
@@ -623,6 +832,7 @@
                         }
                     </div>
                 </div>
+                }
             </div>
         </div>
     };
@@ -637,6 +847,28 @@
 
     .guide-section-last {
         border-bottom: none;
+    }
+
+    .schema-example {
+        width: 60%;
+        margin: 1.5rem auto;
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        overflow: hidden;
+    }
+
+    .schema-example-label {
+        background: var(--bg-panel-alt);
+        padding: 0.5rem 1rem;
+        font-weight: 600;
+        font-size: 0.9rem;
+        border-bottom: 1px solid var(--border-color);
+        color: var(--cosmos-blue);
+    }
+
+    .schema-example .doc-json {
+        margin: 0;
+        border-radius: 0;
     }
 
     .guide-callout {
@@ -659,6 +891,7 @@
         gap: 0.5rem;
         margin: 1rem 0;
         flex-wrap: wrap;
+        scroll-margin-top: 80px;
     }
 
     .guide-step-btn {
@@ -740,6 +973,56 @@
         box-shadow: var(--shadow-md);
         z-index: 100;
         max-width: 420px;
+        transition: all 0.3s ease;
+    }
+
+    .guide-cost-tracker.cost-minimized .cost-tracker-header,
+    .guide-cost-tracker.cost-minimized .cost-tracker-search-values,
+    .guide-cost-tracker.cost-minimized .cost-table {
+        display: none;
+    }
+
+    .guide-cost-tracker .cost-minimized-icon {
+        display: none;
+    }
+
+    .guide-cost-tracker.cost-minimized .cost-minimized-icon {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: default;
+    }
+
+    .cost-mini-logo {
+        width: 32px;
+        height: 32px;
+        border-radius: 6px;
+    }
+
+    .guide-cost-tracker.cost-minimized {
+        padding: 0.4rem;
+        border-radius: 10px;
+    }
+
+    .cost-tracker-search-values {
+        font-size: 0.75rem;
+        opacity: 0.8;
+        margin-bottom: 0.5rem;
+    }
+
+    .cost-model-link {
+        color: var(--cosmos-blue);
+        text-decoration: none;
+        cursor: pointer;
+        font-weight: 600;
+    }
+
+    .cost-model-link:hover {
+        text-decoration: underline;
+    }
+
+    .guide-section h2[id^="section-"] {
+        scroll-margin-top: 80px;
     }
 
     .guide-demo-link {
@@ -757,6 +1040,58 @@
     .guide-demo-link:hover {
         background: var(--cosmos-blue-hover);
     }
+
+    .summary-cost-analysis {
+        background: var(--bg-panel);
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        padding: 1.25rem 1.5rem;
+        margin: 1.5rem 0;
+    }
+
+    .summary-cost-analysis h3 {
+        margin-top: 0;
+        margin-bottom: 0.75rem;
+        color: var(--cosmos-blue);
+    }
+
+    .summary-cost-table {
+        width: 100%;
+        margin: 1rem 0;
+    }
+
+    .summary-best-row {
+        background: rgba(0, 120, 212, 0.08);
+        font-weight: 600;
+    }
+
+    .summary-savings-callout {
+        background: rgba(0, 120, 212, 0.06);
+        border-left: 4px solid var(--cosmos-blue);
+        padding: 0.75rem 1rem;
+        border-radius: 0 6px 6px 0;
+        margin-top: 1rem;
+        line-height: 1.6;
+    }
+
+    .start-over-btn {
+        background: none;
+        border: 1px solid var(--border-color);
+        border-radius: 4px;
+        padding: 0.3rem 0.75rem;
+        font-size: 0.8rem;
+        color: var(--text-secondary);
+        cursor: pointer;
+        margin-top: 0.75rem;
+        opacity: 0.6;
+        transition: opacity 0.2s;
+    }
+
+    .start-over-btn:hover {
+        opacity: 1;
+        border-color: var(--cosmos-blue);
+        color: var(--cosmos-blue);
+    }
 </style>
 
 @code {
@@ -768,6 +1103,7 @@
         ["Reference"] = new(),
         ["Hybrid"] = new()
     };
+    private bool observerSetUp;
 
     private enum SectionStep { Ready, MovieDone, DirectorDone, DetailDone }
 
@@ -781,10 +1117,36 @@
         public DataModelingResponse? DetailResponse { get; set; }
     }
 
+
     protected override async Task OnInitializedAsync()
     {
         Benchmark.OnChange += StateHasChanged;
+        ResetAll();
         hints = await Api.GetHintsAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!observerSetUp && HasAnyCosts())
+        {
+            observerSetUp = true;
+            await JS.InvokeVoidAsync("eval", @"
+                (function() {
+                    if (window.__costObserver) window.__costObserver.disconnect();
+                    var el = document.getElementById('section-Summary');
+                    if (!el) return;
+                    window.__costObserver = new IntersectionObserver(function(entries) {
+                        var tracker = document.querySelector('.guide-cost-tracker');
+                        if (!tracker) return;
+                        entries.forEach(function(e) {
+                            if (e.isIntersecting) tracker.classList.add('cost-minimized');
+                            else tracker.classList.remove('cost-minimized');
+                        });
+                    }, { threshold: 0.1 });
+                    window.__costObserver.observe(el);
+                })()
+            ");
+        }
     }
 
     private string StepLabel(string text, bool loading, bool done)
@@ -809,6 +1171,7 @@
             sec.MovieResponse = resp;
             sec.Step = SectionStep.MovieDone;
             RecordBenchmark(resp);
+            await ScrollToResults(model);
         }
         catch (Exception ex) { sec.Error = $"Error: {ex.Message}"; }
         finally { sec.IsLoading = false; }
@@ -829,6 +1192,7 @@
             sec.DirectorResponse = resp;
             sec.Step = SectionStep.DirectorDone;
             RecordBenchmark(resp);
+            await ScrollToResults(model);
         }
         catch (Exception ex) { sec.Error = $"Error: {ex.Message}"; }
         finally { sec.IsLoading = false; }
@@ -876,6 +1240,7 @@
             sec.DetailResponse = resp;
             sec.Step = SectionStep.DetailDone;
             RecordBenchmark(resp);
+            await ScrollToResults(model);
         }
         catch (Exception ex) { sec.Error = $"Error: {ex.Message}"; }
         finally { sec.IsLoading = false; }
@@ -894,6 +1259,13 @@
         Benchmark.ClearModelCosts();
     }
 
+    private async Task StartOver()
+    {
+        ResetAll();
+        hints = await Api.GetHintsAsync();
+        await ScrollToSection("Single");
+    }
+
     private bool HasAnyCosts()
     {
         return Benchmark.ModelNames.Any(m => Benchmark.GetModelTotal(m) > 0);
@@ -905,9 +1277,20 @@
             Benchmark.RecordQuery(diag.QueryType, ru, diag.DataModel);
     }
 
+    private async Task ScrollToResults(string model)
+    {
+        await Task.Yield();
+        await JS.InvokeVoidAsync("eval", $"document.getElementById('steps-{model}')?.scrollIntoView({{behavior:'smooth',block:'start'}})");
+    }
+
+    private async Task ScrollToSection(string model)
+    {
+        await JS.InvokeVoidAsync("eval", $"document.getElementById('section-{model}')?.scrollIntoView({{behavior:'smooth',block:'start'}})");
+    }
+
     private static (DataModelingResponse? Response, string Label) GetActiveResponse(SectionState sec)
     {
-        if (sec.DetailResponse is not null) return (sec.DetailResponse, "Movie Select (Point Read)");
+        if (sec.DetailResponse is not null) return (sec.DetailResponse, "Select Movie (Point Read)");
         if (sec.DirectorResponse is not null) return (sec.DirectorResponse, "Director Search");
         if (sec.MovieResponse is not null) return (sec.MovieResponse, "Movie Search");
         return (null, "");
@@ -951,8 +1334,55 @@
         return JsonSerializer.Serialize(el, new JsonSerializerOptions { WriteIndented = true });
     }
 
+    private static List<string> GetArray(JsonElement el, string prop)
+    {
+        if (el.ValueKind != JsonValueKind.Object || !el.TryGetProperty(prop, out var arr) || arr.ValueKind != JsonValueKind.Array)
+            return [];
+        var result = new List<string>();
+        foreach (var item in arr.EnumerateArray())
+        {
+            var name = item.TryGetProperty("name", out var n) ? n.GetString() : null;
+            if (!string.IsNullOrEmpty(name)) result.Add(name);
+        }
+        return result;
+    }
+
+    private static List<(string Name, string OriginalName, string? ImageUrl)> GetPeople(JsonElement el, string prop)
+    {
+        if (el.ValueKind != JsonValueKind.Object || !el.TryGetProperty(prop, out var arr) || arr.ValueKind != JsonValueKind.Array)
+            return [];
+        var result = new List<(string, string, string?)>();
+        foreach (var item in arr.EnumerateArray())
+        {
+            var name = item.TryGetProperty("name", out var n) ? n.GetString() ?? "" : "";
+            var originalName = item.TryGetProperty("originalName", out var on) && on.ValueKind == JsonValueKind.String
+                ? on.GetString() ?? name : name;
+            var imageUrl = item.TryGetProperty("imageUrl", out var img) && img.ValueKind == JsonValueKind.String
+                ? img.GetString() : null;
+            result.Add((name, originalName, imageUrl));
+        }
+        return result;
+    }
+
+    private static List<(string Review, string Score)> GetReviews(JsonElement el)
+    {
+        if (el.ValueKind != JsonValueKind.Object || !el.TryGetProperty("reviews", out var arr) || arr.ValueKind != JsonValueKind.Array)
+            return [];
+        var result = new List<(string, string)>();
+        foreach (var item in arr.EnumerateArray())
+        {
+            var review = item.TryGetProperty("criticReview", out var r) && r.ValueKind == JsonValueKind.String
+                ? r.GetString() ?? "" : "";
+            var score = item.TryGetProperty("criticScore", out var s) && s.ValueKind == JsonValueKind.Number
+                ? s.GetRawText() : "";
+            result.Add((review, score));
+        }
+        return result;
+    }
+
     public void Dispose()
     {
         Benchmark.OnChange -= StateHasChanged;
+        _ = JS.InvokeVoidAsync("eval", "if(window.__costObserver){window.__costObserver.disconnect();window.__costObserver=null;}");
     }
 }
