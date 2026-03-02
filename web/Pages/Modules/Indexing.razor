@@ -29,10 +29,12 @@
     </p>
     <h3>Scenario</h3>
     <p>
-        Taking our data modeling movie scenario further, this demonstration focuses on three indexing policy strategies: Default, Implicit, and Explicit focusing on how
+        Taking our data modeling movie scenario further, this demonstration focuses on three indexing policy strategies: Default, Implicit, and Explicit, focusing on how
         each affects the RU cost when writing the same document to containers with different policies.
-        Each browsing event contains information both useful for the user experience and telemetry for the applcation. This is written
-        to an event container that each have their own defined indexing policy. 
+        Each browsing event contains information both useful for the user experience and telemetry for the application. This is written
+        to an event container that each have their own defined indexing policy.
+    </p>
+    <p>
         <span class="ix-highlight-indexed">Highlighted fields</span> in the event document indicate which properties are indexed by that policy.
     </p>
 </section>
@@ -72,7 +74,7 @@
     <p>
         The implicit strategy maintains the wildcard include (<code>/*</code>) but explicitly excludes paths we know
         will never be queried: <code>/client/*</code>, <code>/geo/*</code>, <code>/performance/*</code>,
-        and <code>/context/*</code>. New properties outside those paths are still automatically indexed impicitly, giving
+        and <code>/context/*</code>. New properties outside those paths are still automatically indexed implicitly, giving
         flexibility for evolving query patterns but saving on known access patterns.
     </p>
 
@@ -99,7 +101,7 @@
     <h2 id="section-Explicit">Explicit Policy</h2>
     <p>
         When you know exactly which properties will be queried, you can include only those paths and exclude
-        everything else with a wildcard being far more explicit in your indexing approach. Here we only index <code>/timestamp/?</code> allowing us
+        everything else with a wildcard, being far more explicit in your indexing approach. Here we only index <code>/timestamp/?</code> allowing us
         to perform time-window queries we desire but giving us lowest possible write cost.
     </p>
 
@@ -128,7 +130,7 @@
         Indexing policies will directly control write costs. The Default policy gives maximum query flexibility at the
         highest write RU cost. The Explicit policy gives the lowest write cost but limits which properties can
         be queried efficiently. The Implicit policy provides a practical middle ground in scenarios where we have evolving application usage
-        but also identifying known properties that do not need to be indexed.
+        while also identifying known properties that do not need to be indexed.
     </p>
 
     @{
@@ -179,7 +181,7 @@
     <p>
         Cosmos DB has two indexing modes outside of the defined policies: <em>Consistent</em> (default, synchronous during write) and <em>None</em>
         (disabled). Indexing policies are configured at the container level and can be updated at any time. Indexes
-        also consume storage, so intentional policies can  not only reduce compute costs but also reduce storage costs in scenarios where simply not needed.
+        also consume storage, so intentional policies can not only reduce compute costs but also reduce storage costs in scenarios where simply not needed.
     </p>
     <p>
         There is no one-size-fits-all policy. Review your application's query patterns, write throughput, and
@@ -190,6 +192,8 @@
         to write multiple events in parallel to compare costs.
     </p>
 </section>
+
+<div id="ix-page-end"></div>
 
 @* ══════════════════════════════════════════════════════════════════
    Floating Cost Comparison
@@ -262,7 +266,7 @@
                 else
                 {
                     <div class="ix-placeholder">
-                        Select <strong>'Write Event'</strong> to write a document with the <strong>@container</strong> policy
+                        <span>Select <strong>'Write Event'</strong> to write a document with the <strong>@container</strong> policy</span>
                     </div>
                 }
             </div>
@@ -611,6 +615,7 @@
 
     .ix-cost-active {
         font-weight: 600;
+        color: #3b82f6;
     }
 
     .ix-guide-section h2[id^="section-"] {
@@ -666,7 +671,7 @@
             await JS.InvokeVoidAsync("eval", @"
                 (function() {
                     if (window.__ixCostObserver) window.__ixCostObserver.disconnect();
-                    var el = document.getElementById('section-Summary');
+                    var el = document.getElementById('ix-page-end');
                     if (!el) return;
                     window.__ixCostObserver = new IntersectionObserver(function(entries) {
                         var tracker = document.querySelector('.ix-cost-tracker');
@@ -768,8 +773,8 @@
     private static string GetInfoText(string container) => container switch
     {
         "Default" => "With all paths indexed, every property in the document contributes to the RU cost. This is the most expensive write but guarantees any future query pattern is supported without policy changes.",
-        "Implicit" => "By excluding the client, geo, performance, and context paths, fewer properties are indexed on write — reducing the RU cost while still supporting flexible queries on other fields.",
-        "Explicit" => "Only /timestamp is indexed — the write cost is minimal. This is ideal for high-throughput ingestion where you know the exact query patterns, but requires careful management as application queries evolve.",
+        "Implicit" => "By excluding the client, geo, performance, and context paths, fewer properties are indexed on write — reducing the RU cost while still supporting flexible queries on other fields as well as future ones.",
+        "Explicit" => "Only /timestamp is indexed — making the write cost minimal. This is ideal for high-throughput ingestion where you know the exact query patterns, but requires careful management as application queries evolve.",
         _ => ""
     };
 
