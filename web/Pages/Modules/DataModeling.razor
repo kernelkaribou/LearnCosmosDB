@@ -387,7 +387,6 @@
         var multiplier = bestTotal > 0 ? (worstTotal / bestTotal) : 0;
 
         <div class="summary-cost-analysis">
-            <h3>Your Results</h3>
             <p>
                 Based on searching for movie <strong>"@hints?.MovieTitle"</strong> and director <strong>"@hints?.TopDirectorName"</strong>,
                 here is how each model compares:
@@ -1062,6 +1061,11 @@
     .summary-cost-table {
         width: 100%;
         margin: 1rem 0;
+    }
+
+    .summary-cost-table td {
+        color: var(--text-primary);
+        font-weight: 500;
     }
 
     .summary-best-row {
