@@ -17,13 +17,11 @@
    Section 1 — About
    ══════════════════════════════════════════════════════════════════ *@
 <section class="guide-section">
-    <h2>About Data Modeling in Azure Cosmos DB</h2>
     <p>
         While there are multiple considerations in Cosmos DB for optimizing performance, understanding
         <a href="https://docs.microsoft.com/en-us/azure/cosmos-db/modeling-data" target="_blank">data modeling</a>
         and implementing it effectively can be critical in getting the best experience. This walkthrough reviews different
-        methods of modeling in Cosmos DB and demonstrates the benefits of thinking in a non-relational way. Note there is
-        no one size fits all — the demo itself unveils multiple methods as we progress through it.
+        methods of modeling in Cosmos DB and demonstrates the benefits of thinking in a non-relational way. 
     </p>
 
     <h3>Scenario</h3>
@@ -36,12 +34,11 @@
     <p>
         The browsing pattern we are optimizing for: a user searches a movie title, the results show a director,
         they click the director to see other movies, then select a movie from those results. We will walk through four
-        different document models — each using the <strong>same data and same partition key</strong> — and see how
-        the RU cost changes dramatically based on how the data is structured.
+        different document models each using the same data and same <a href="https://docs.microsoft.com/en-us/azure/cosmos-db/partitioning-overview#choose-partitionkey" target="_blank">partition key</a> to see how
+        the RU cost changes based on how the data is structured.
     </p>
     <p>
-        At any given time there are ~1,000 concurrent users performing searches, so for cost calculations consider the
-        query cost × 1,000.
+        When considering costs, we expect any given time there are ~1,000 concurrent users performing searches.
     </p>
 
 </section>
@@ -52,9 +49,8 @@
 <section class="guide-section">
     <h2 id="section-Single">Starting Model — "Single"</h2>
     <p>
-        To try and balance our partitions, we went with a
-        <a href="https://docs.microsoft.com/en-us/azure/cosmos-db/partitioning-overview#choose-partitionkey" target="_blank">partitioning</a>
-        method of using the movie title as our partition key. Each document in our collection is a single movie.
+        To try and balance our partitions, we went with a partitioning
+        method of using the movie title as our partition key. Each document in our container is a single movie with the following structure.
     </p>
     <div class="schema-example">
         <div class="schema-example-label">Example Single Movie Document</div>
@@ -100,11 +96,11 @@
     </div>
     <p>
         Since a user does not know the unique ID of a movie, searching on a movie title allows a partition-based query
-        with lower RU cost. However, searching for a director or actor is embedded information — it requires a cross-partition
-        <code>ARRAY_CONTAINS</code> query and the user must specify the search type (movie vs. person).
+        with lower RU cost. However, searching for a director or actor is embedded information and requires a a more complex and cross-partition
+        query. This requires the user to specify the search type (movie vs. person).
     </p>
     <p>
-        <strong>Try it:</strong> Walk through the three steps below to see the RU cost at each stage.
+        Walk through the three steps below to see the RU cost at each stage simulating the search pattern of movie, director and selecting a movie.
     </p>
 
     @{ var single = sections["Single"]; }
@@ -116,22 +112,22 @@
         @if (singleActive.Label == "Movie Search")
         {
             <div class="guide-callout guide-callout-info">
-                <strong>Info:</strong> This query searches on the movie title, which is the partition key. This means the
-                query is scoped to a single partition — the cheapest type of SQL query at ~3 RU.
+                <strong>Note:</strong> This query searches on the movie title, which is the partition key. This means the
+                query is scoped to a single partition.
             </div>
         }
         @if (singleActive.Label == "Director Search")
         {
             <div class="guide-callout guide-callout-info">
-                <strong>Info:</strong> The Single model required a <code>searchType=person</code> parameter and used an
-                <code>ARRAY_CONTAINS</code> cross-partition query — significantly more expensive than the movie search.
+                <strong>Note:</strong> The Single model required a separate query based upon explicitly making it a person search. 
+                This required a cross partition query that used an <code>ARRAY_CONTAINS</code> method and just added complexity to both code and UI.
             </div>
         }
         @if (singleActive.Label == "Select Movie (Point Read)")
         {
             <div class="guide-callout guide-callout-info">
-                <strong>Info:</strong> Since we know the exact document ID and partition key from the previous results,
-                this is a point read — the cheapest possible operation at ~1 RU.
+                <strong>Note:</strong> Since we know the exact document ID and partition key from the previous results,
+                this is a point read which is typically the cheapest query method for small documents like the ones we utilize.
             </div>
         }
         @RenderResultsPanel(singleActive.Response, singleActive.Label, singleActive.Label == "Select Movie (Point Read)", "results-Single")
@@ -144,9 +140,9 @@
 <section class="guide-section">
     <h2 id="section-Embedded">Embedded Model</h2>
     <p>
-        We improved searching by creating a collocated document for each Actor and Director for a given movie. The data is
-        embedded just like the movie document with some minor changes to properties. This simplified application logic and
-        improved user experience — <strong>no need to specify a search type</strong>. The movie documents remain unchanged.
+        Starting to rethink this mode, we improved searching by creating a collocated document for each Actor and Director for a given movie. The data is
+        embedded just like the movie document with some minor changes to properties, primarily making the document title the person rather than the movie.
+        This simplified application logic and improved user experience, removing the need to specify a search type. The movie documents remain unchanged.
     </p>
     <div class="schema-example">
         <div class="schema-example-label">Example Embedded Person Document</div>
@@ -193,9 +189,9 @@
 }</pre>
     </div>
     <p>
-        Because we query on a partition value (the person's name), the director search cost is reduced significantly.
-        However, these person documents duplicate the full movie data, increasing storage from ~500MB to ~3GB.
-        The storage cost increase is minimal (~$0.75) compared to the RU savings.
+        Since we query on a partition value (the person's name), the director search cost is reduced significantly.
+        However, these person documents duplicate the full movie data and increasing storage needed substantially.
+        While storage is a miminmal part of overall cost it was a tradeoff to greatly reduce the RU's needed for our query patterns.
     </p>
 
     @{ var embedded = sections["Embedded"]; }
@@ -207,21 +203,20 @@
         @if (embeddedActive.Label == "Movie Search")
         {
             <div class="guide-callout guide-callout-info">
-                <strong>Info:</strong> The movie search is identical to the Single model — same partition-key query,
-                same RU cost. The Embedded model only improves person searches.
+                <strong>Note:</strong> The movie search is identical to the Single model but this Embedded model improved person searches.
             </div>
         }
         @if (embeddedActive.Label == "Director Search")
         {
             <div class="guide-callout guide-callout-info">
-                <strong>Info:</strong> No <code>searchType</code> needed — the query is a simple partition-key lookup
-                on the director's name. Compare this RU cost to the Single model's director search above.
+                <strong>Note:</strong> No search type is needed as the query is a simple partition-key lookup
+                on the director's name and removing the cross partition query reduced the cost heavily.
             </div>
         }
         @if (embeddedActive.Label == "Select Movie (Point Read)")
         {
             <div class="guide-callout guide-callout-info">
-                <strong>Info:</strong> Point read on the movie document using ID and partition key — same ~1 RU cost
+                <strong>Note:</strong> Point read on the movie document using ID and partition key, same RU cost
                 as the Single model.
             </div>
         }
@@ -235,8 +230,8 @@
 <section class="guide-section">
     <h2 id="section-Reference">Reference Model</h2>
     <p>
-        To reduce RU cost further, we used the same collocation method but changed the person documents to only contain
-        basic reference data for the movie. This greatly reduced document size and made them more consistent.
+        Rethinking this more carefully, we used the same collocation method but changed the person documents to only contain
+        basic reference data for the movie. We realized with query and browsing patterns the rich details of each movie for a person focused search was not necessary.
     </p>
     <div class="schema-example">
         <div class="schema-example-label">Example Reference Person Document</div>
@@ -254,8 +249,8 @@
 }</pre>
     </div>
     <p>
-        We lose embedded details like genres and reviews, but those were not used during browsing. The smaller
-        documents result in slightly lower RU costs.
+        We lose embedded details like descriptions, taglines and reviews, but those were not used during browsing.
+        This reduced the amount of data in our person collocated documents greatly reduced the document size while also futher reducing RU costs.
     </p>
 
     @{ var reference = sections["Reference"]; }
@@ -267,21 +262,21 @@
         @if (referenceActive.Label == "Movie Search")
         {
             <div class="guide-callout guide-callout-info">
-                <strong>Info:</strong> Movie search is the same partition-key query — the movie documents are unchanged
+                <strong>Note:</strong> Like all other models, Movie search is the same partition-key query as the movie documents are unchanged
                 across all models.
             </div>
         }
         @if (referenceActive.Label == "Director Search")
         {
             <div class="guide-callout guide-callout-info">
-                <strong>Info:</strong> The Reference model uses slimmer person documents with only basic movie data.
-                The smaller document size results in a slightly lower RU cost compared to the Embedded model.
+                <strong>Note:</strong> The Reference model uses slimmer person documents with only basic movie data.
+                The smaller document size results in a slightly lower RU cost compared to the Embedded model while also reducing storage requirements.
             </div>
         }
         @if (referenceActive.Label == "Select Movie (Point Read)")
         {
             <div class="guide-callout guide-callout-info">
-                <strong>Info:</strong> Point read retrieves the full movie document — same cost as other models since
+                <strong>Note:</strong> Point read retrieves the full movie document same cost as other models since
                 the movie documents are identical across all four containers.
             </div>
         }
@@ -295,10 +290,10 @@
 <section class="guide-section">
     <h2 id="section-Hybrid">Hybrid Model</h2>
     <p>
-        By combining the partition-based query approach from the Embedded model with the smaller document size from
-        the Reference model, we designed a hybrid document. Each person has a <strong>single document</strong> containing
-        a <code>roles</code> array with reference data for each movie. This can be obtained with a partition query or
-        even a Point Read.
+        As a final design we combined the partition-based query approach from the Embedded model with the smaller document size from
+        the Reference model. Each person has a single document containing
+        a roles array with reference data for each movie. This can be obtained with a partition query or
+        even a Point Read by allowing only a single document result.
     </p>
     <div class="schema-example">
         <div class="schema-example-label">Example Hybrid Person Document</div>
@@ -331,7 +326,7 @@
     </div>
     <p>
         The director search cost drops to nearly match the movie search cost. Once a user starts browsing by
-        clicking results, subsequent queries can be Point Reads — roughly 1-2 RU each.
+        clicking results, subsequent queries can be Point Reads.
     </p>
 
     @{ var hybrid = sections["Hybrid"]; }
@@ -420,7 +415,7 @@
             </table>
             <div class="summary-savings-callout">
                 <strong>@bestModel</strong> saved <strong>@savings.ToString("F0")%</strong> in RU cost compared to the Single model
-                — a <strong>@multiplier.ToString("F1")×</strong> improvement.
+                A <strong>@multiplier.ToString("F1")×</strong> improvement.
                 At 1,000 requests/sec that's <strong>@((worstTotal * 1000).ToString("N0")) RU/s</strong> vs
                 <strong>@((bestTotal * 1000).ToString("N0")) RU/s</strong>, saving
                 <strong>@(((worstTotal - bestTotal) * 1000).ToString("N0")) RU/s</strong>.
@@ -432,21 +427,19 @@
     }
 
     <p>
-        Given the scenario of 1,000 concurrent users performing these actions, the Hybrid model achieves over <strong>2.5×</strong>
-        performance improvement — resulting in over <strong>60%</strong> service cost reduction while also providing an
-        improved application experience with richer browsing data.
+        Given the scenario of 1,000 concurrent users performing these actions, the Hybrid model achieves a high
+        performance improvement while also providing an improved application experience. The only key influencers would be the 
+        number of movies per person which in the realm of reality is not likely to be large for a vast amount of the various actors and directors.
+        As the overall count of documents would increase the RU of the Single and other models would increase at a rate much higher than the hybrid model
+        providing better long term scalability as well.
     </p>
     <p>
         There is no one-size-fits-all solution, but you will find there are many ways to get great performance out of
-        Cosmos DB with data modeling. Review the cost comparison table below to see your results from this walkthrough.
+        Cosmos DB with data modeling.
     </p>
     <p>
-        <a href="/demos/datamodeling" class="guide-demo-link">Open the free-play demo →</a>
-        to explore all four models with your own search values.
-    </p>
-    <p style="opacity: 0.6; font-size: 0.85rem;">
-        <em>This scenario was tested with <a href="https://www.imdb.com/">IMDB</a> data available at the time. The
-        document counts for the interactive demo may differ from the original millions-scale dataset.</em>
+        <a href="/demos/datamodeling" class="guide-demo-link">Sandbox demo</a>
+        Explore all four models with other search values and interactive patterns.
     </p>
 </section>
 

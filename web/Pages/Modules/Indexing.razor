@@ -24,20 +24,16 @@
         <a href="https://learn.microsoft.com/en-us/azure/cosmos-db/index-overview" target="_blank">index</a>
         every property for each item in your containers. This can be highly beneficial from a query performance
         perspective while not requiring administration effort. Unlike reads where RU cost is influenced by document
-        model, query patterns and document size, <strong>write RU costs are almost exclusively impacted by the
-        indexing policies in place</strong>.
+        model, query patterns and document size, write RU costs are almost exclusively impacted by the
+        indexing policies in place.
     </p>
+    <h3>Scenario</h3>
     <p>
-        This demonstration focuses on three indexing policy strategies — Default, Implicit, and Explicit — and how
-        each affects the RU cost when writing the <strong>same document</strong> to containers with different policies.
-        Each step below writes a browsing analytics event to the corresponding container so you can
-        compare the cost side-by-side. <span class="ix-highlight-indexed">Highlighted fields</span> in the event
-        document indicate which properties are indexed by that policy.
-    </p>
-    <p>
-        Cosmos DB has two indexing modes: <em>Consistent</em> (default, synchronous during write) and <em>None</em>
-        (disabled). Indexing policies are configured at the container level and can be updated at any time. Indexes
-        also consume storage, so intentional policies can reduce both compute and storage costs.
+        Taking our data modeling movie scenario further, this demonstration focuses on three indexing policy strategies: Default, Implicit, and Explicit focusing on how
+        each affects the RU cost when writing the same document to containers with different policies.
+        Each browsing event contains information both useful for the user experience and telemetry for the applcation. This is written
+        to an event container that each have their own defined indexing policy. 
+        <span class="ix-highlight-indexed">Highlighted fields</span> in the event document indicate which properties are indexed by that policy.
     </p>
 </section>
 
@@ -48,7 +44,7 @@
     <h2 id="section-Default">Default Policy</h2>
     <p>
         Without any configuration, Cosmos DB automatically indexes every property in each document. This is a
-        hands-off approach that supports any query pattern — but comes at the highest write cost since every
+        hands-off approach that supports any query pattern but comes at the highest write cost since every
         property must be indexed.
     </p>
 
@@ -74,10 +70,10 @@
 <section class="ix-guide-section">
     <h2 id="section-Implicit">Implicit Policy</h2>
     <p>
-        This strategy maintains the wildcard include (<code>/*</code>) but explicitly excludes paths we know
-        will never be queried — <code>/client/*</code>, <code>/geo/*</code>, <code>/performance/*</code>,
-        and <code>/context/*</code>. New properties outside those paths are still automatically indexed, giving
-        flexibility for evolving query patterns.
+        The implicit strategy maintains the wildcard include (<code>/*</code>) but explicitly excludes paths we know
+        will never be queried: <code>/client/*</code>, <code>/geo/*</code>, <code>/performance/*</code>,
+        and <code>/context/*</code>. New properties outside those paths are still automatically indexed impicitly, giving
+        flexibility for evolving query patterns but saving on known access patterns.
     </p>
 
     <div class="ix-step-row" id="steps-Implicit">
@@ -103,8 +99,8 @@
     <h2 id="section-Explicit">Explicit Policy</h2>
     <p>
         When you know exactly which properties will be queried, you can include only those paths and exclude
-        everything else with a wildcard. Here we only index <code>/timestamp/?</code> — the minimum needed
-        for time-window queries — giving us the lowest possible write cost.
+        everything else with a wildcard being far more explicit in your indexing approach. Here we only index <code>/timestamp/?</code> allowing us
+        to perform time-window queries we desire but giving us lowest possible write cost.
     </p>
 
     <div class="ix-step-row" id="steps-Explicit">
@@ -129,9 +125,10 @@
 <section id="section-Summary" class="ix-guide-section ix-guide-section-last">
     <h2>Summary</h2>
     <p>
-        Indexing policies directly control write costs. The Default policy gives maximum query flexibility at the
+        Indexing policies will directly control write costs. The Default policy gives maximum query flexibility at the
         highest write RU cost. The Explicit policy gives the lowest write cost but limits which properties can
-        be queried efficiently. The Implicit policy provides a practical middle ground.
+        be queried efficiently. The Implicit policy provides a practical middle ground in scenarios where we have evolving application usage
+        but also identifying known properties that do not need to be indexed.
     </p>
 
     @{
@@ -179,14 +176,18 @@
             </div>
         </div>
     }
-
+    <p>
+        Cosmos DB has two indexing modes outside of the defined policies: <em>Consistent</em> (default, synchronous during write) and <em>None</em>
+        (disabled). Indexing policies are configured at the container level and can be updated at any time. Indexes
+        also consume storage, so intentional policies can  not only reduce compute costs but also reduce storage costs in scenarios where simply not needed.
+    </p>
     <p>
         There is no one-size-fits-all policy. Review your application's query patterns, write throughput, and
         tolerance for index management to choose the right strategy for each container.
     </p>
     <p>
-        <a href="/demos/indexing" class="ix-demo-link">Open the free-play demo →</a>
-        to write multiple events and compare cumulative costs.
+        <a href="/demos/indexing" class="ix-demo-link">Indexing Demo</a>
+        to write multiple events in parallel to compare costs.
     </p>
 </section>
 
