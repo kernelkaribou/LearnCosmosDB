@@ -339,21 +339,20 @@
         {
             <div class="guide-callout guide-callout-info">
                 <strong>Info:</strong> Movie search remains the same partition-key query across all models.
-                The real gains in the Hybrid model come from the director search.
             </div>
         }
         @if (hybridActive.Label == "Director Search")
         {
             <div class="guide-callout guide-callout-info">
-                <strong>Info:</strong> The director search is now nearly as cheap as a movie search — a single person
-                document contains all movie references in a <code>roles</code> array. Compare the costs in the table below.
+                <strong>Info:</strong> The director search is now nearly as cheap as a movie search. A single person
+                document contains all movie references in a <code>roles</code> array. Retrieving one result from one partition.
             </div>
         }
         @if (hybridActive.Label == "Select Movie (Point Read)")
         {
             <div class="guide-callout guide-callout-info">
                 <strong>Info:</strong> Point read on the selected movie. With the Hybrid model, once a user starts
-                browsing by clicking results, every subsequent query can be a Point Read at ~1 RU each.
+                browsing by clicking results, every subsequent query can be a Point Read for both movies and persons.
             </div>
         }
         @RenderResultsPanel(hybridActive.Response, hybridActive.Label, hybridActive.Label == "Select Movie (Point Read)", "results-Hybrid")
