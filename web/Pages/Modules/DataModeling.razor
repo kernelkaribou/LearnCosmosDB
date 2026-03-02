@@ -396,6 +396,10 @@
                 <thead>
                     <tr>
                         <th>Model</th>
+                        @foreach (var action in Benchmark.ActionNames)
+                        {
+                            <th>@action</th>
+                        }
                         <th>Total RU (1 Request)</th>
                         <th>RU × 1,000 Requests/sec</th>
                     </tr>
@@ -407,7 +411,12 @@
                         var isBest = model == bestModel;
                         <tr class="@(isBest ? "summary-best-row" : "")">
                             <td>@model</td>
-                            <td>@total.ToString("F2") RU</td>
+                            @foreach (var action in Benchmark.ActionNames)
+                            {
+                                var cost = Benchmark.GetCost(model, action);
+                                <td>@cost.ToString("F2") RU</td>
+                            }
+                            <td><strong>@total.ToString("F2") RU</strong></td>
                             <td>@((total * 1000).ToString("N0")) RU/s</td>
                         </tr>
                     }
@@ -438,10 +447,12 @@
         Cosmos DB with data modeling.
     </p>
     <p>
-        <a href="/demos/datamodeling" class="guide-demo-link">Sandbox demo</a>
+        <a href="/demos/datamodeling" class="guide-demo-link">Data Modeling demo</a>
         Explore all four models with other search values and interactive patterns.
     </p>
 </section>
+
+<div id="dm-page-end"></div>
 
 @* ══════════════════════════════════════════════════════════════════
    Floating Cost Comparison Table
@@ -1126,7 +1137,7 @@
             await JS.InvokeVoidAsync("eval", @"
                 (function() {
                     if (window.__costObserver) window.__costObserver.disconnect();
-                    var el = document.getElementById('section-Summary');
+                    var el = document.getElementById('dm-page-end');
                     if (!el) return;
                     window.__costObserver = new IntersectionObserver(function(entries) {
                         var tracker = document.querySelector('.guide-cost-tracker');
@@ -1163,7 +1174,7 @@
             if (resp is null) { sec.Error = "No results found."; return; }
             sec.MovieResponse = resp;
             sec.Step = SectionStep.MovieDone;
-            RecordBenchmark(resp);
+            RecordBenchmark(resp, "Movie Query");
             await ScrollToResults(model);
         }
         catch (Exception ex) { sec.Error = $"Error: {ex.Message}"; }
@@ -1184,7 +1195,7 @@
             if (resp is null) { sec.Error = "No results found."; return; }
             sec.DirectorResponse = resp;
             sec.Step = SectionStep.DirectorDone;
-            RecordBenchmark(resp);
+            RecordBenchmark(resp, "Director Query");
             await ScrollToResults(model);
         }
         catch (Exception ex) { sec.Error = $"Error: {ex.Message}"; }
@@ -1232,7 +1243,7 @@
             if (resp is null) { sec.Error = "Document not found."; return; }
             sec.DetailResponse = resp;
             sec.Step = SectionStep.DetailDone;
-            RecordBenchmark(resp);
+            RecordBenchmark(resp, "Movie Point Read");
             await ScrollToResults(model);
         }
         catch (Exception ex) { sec.Error = $"Error: {ex.Message}"; }
@@ -1264,10 +1275,10 @@
         return Benchmark.ModelNames.Any(m => Benchmark.GetModelTotal(m) > 0);
     }
 
-    private void RecordBenchmark(DataModelingResponse resp)
+    private void RecordBenchmark(DataModelingResponse resp, string action)
     {
         if (resp.RequestDiagnostics is { } diag && double.TryParse(diag.RequestCharge, out var ru))
-            Benchmark.RecordQuery(diag.QueryType, ru, diag.DataModel);
+            Benchmark.RecordQuery(action, ru, diag.DataModel);
     }
 
     private async Task ScrollToResults(string model)

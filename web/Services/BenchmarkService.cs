@@ -10,7 +10,7 @@ public class BenchmarkService
     public double TotalRUs { get; private set; }
 
     private static readonly string[] Models = ["Single", "Embedded", "Reference", "Hybrid"];
-    private static readonly string[] Actions = ["SQL Query", "Point Read"];
+    private static readonly string[] Actions = ["Movie Query", "Director Query", "Movie Point Read"];
 
     // model -> action -> cumulative RU
     private readonly Dictionary<string, Dictionary<string, double>> _modelCosts = new(StringComparer.OrdinalIgnoreCase);
@@ -35,7 +35,7 @@ public class BenchmarkService
 
     public void RecordQuery(string queryType, double requestCharge, string? model = null)
     {
-        if (queryType == "Point Read")
+        if (queryType == "Point Read" || queryType == "Movie Point Read")
             PointReads++;
         else
             SelectQueries++;
